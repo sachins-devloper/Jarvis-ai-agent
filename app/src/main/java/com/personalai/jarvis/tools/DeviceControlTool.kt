@@ -88,8 +88,44 @@ class DeviceControlTool(private val context: Context) : AgentTool {
                     ToolResult.success("Opened Bluetooth settings.")
                 }
 
+                "storage_status", "check_storage", "get_storage" -> {
+                    val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+                    val bytesAvailable = stat.availableBlocksLong * stat.blockSizeLong
+                    val bytesTotal = stat.blockCountLong * stat.blockSizeLong
+                    val usedBytes = bytesTotal - bytesAvailable
+                    val usedGb = String.format("%.2f", usedBytes.toDouble() / (1024 * 1024 * 1024))
+                    val totalGb = String.format("%.2f", bytesTotal.toDouble() / (1024 * 1024 * 1024))
+                    val freeGb = String.format("%.2f", bytesAvailable.toDouble() / (1024 * 1024 * 1024))
+                    val percentUsed = if (bytesTotal > 0) ((usedBytes.toDouble() / bytesTotal) * 100).toInt() else 0
+                    ToolResult.success("Phone Storage: $usedGb GB used of $totalGb GB ($freeGb GB free, $percentUsed% used).")
+                }
+
+                "list_installed_apps", "get_apps" -> {
+                    val pm = context.packageManager
+                    val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA).filter {
+                        pm.getLaunchIntentForPackage(it.packageName) != null
+                    }.map { pm.getApplicationLabel(it).toString() }.distinct().sorted()
+                    val preview = apps.take(15).joinToString(", ")
+                    val extra = if (apps.size > 15) " and ${apps.size - 15} more" else ""
+                    ToolResult.success("Found ${apps.size} installed apps: $preview$extra.")
+                }
+
+                "take_screenshot", "screenshot" -> {
+                    val service = com.personalai.jarvis.services.JarvisAccessibilityService.instance
+                    if (service != null) {
+                        val success = service.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT)
+                        if (success) {
+                            ToolResult.success("Screenshot captured.")
+                        } else {
+                            ToolResult.error("Could not capture screenshot.")
+                        }
+                    } else {
+                        ToolResult.error("Accessibility Service is not enabled. Please enable Jarvis in Settings > Accessibility.")
+                    }
+                }
+
                 else -> {
-                    ToolResult.error("Unknown action '$action'. Available: flashlight_on, flashlight_off, volume_up, volume_down, battery_status, open_wifi_settings.")
+                    ToolResult.error("Unknown action '$action'. Available: flashlight_on, flashlight_off, volume_up, volume_down, battery_status, storage_status, list_installed_apps, take_screenshot, open_wifi_settings.")
                 }
             }
         } catch (e: Exception) {

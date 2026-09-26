@@ -6,7 +6,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,14 +54,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -91,7 +100,19 @@ fun JarvisScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
+
+    val showScrollToBottom by remember {
+        derivedStateOf {
+            val totalItems = uiState.messages.size
+            if (totalItems <= 1) false
+            else {
+                val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                lastVisibleIndex < totalItems - 1
+            }
+        }
+    }
 
     // Lifecycle observer to refresh Accessibility & Notification listener active state
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -176,7 +197,7 @@ fun JarvisScreen(
                             }
                         }
                         Text(
-                            text = "Autonomous Android Agent",
+                            text = "autonomous Android Agent",
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
@@ -257,110 +278,154 @@ fun JarvisScreen(
                 }
             }
 
-            // 4. Conversation Stream & Tool Execution Cards
-            LazyColumn(
-                state = listState,
+            // 4. Conversation Stream & Tool Execution Cards with Scroll-to-Bottom Button
+            Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (uiState.messages.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 40.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(64.dp)
-                                        .clip(CircleShape)
-                                        .background(JarvisSurfaceVariant),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoAwesome,
-                                        contentDescription = "Empty",
-                                        tint = JarvisCyan.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(32.dp)
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (uiState.messages.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(CircleShape)
+                                            .background(JarvisSurfaceVariant),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.AutoAwesome,
+                                            contentDescription = "Empty",
+                                            tint = JarvisCyan.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Text(
+                                        text = "Ready to assist you on-device.",
+                                        color = TextPrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Tap the glowing mic or type an action below.",
+                                        color = TextSecondary,
+                                        fontSize = 13.sp
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(14.dp))
-                                Text(
-                                    text = "Ready to assist you on-device.",
-                                    color = TextPrimary,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
+                            }
+                        }
+                    }
+
+                    items(uiState.messages, key = { it.id }) { msg ->
+                        Column {
+                            ChatMessageBubble(message = msg)
+
+                            // If this message has suggestions (e.g. disambiguation options for multiple contacts)
+                            if (!msg.suggestions.isNullOrEmpty()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    msg.suggestions.forEach { suggestion ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(JarvisCyan.copy(alpha = 0.15f))
+                                                .border(1.dp, JarvisCyan, RoundedCornerShape(16.dp))
+                                                .clickable { viewModel.submitQuery(suggestion) }
+                                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(
+                                                text = suggestion,
+                                                color = JarvisCyan,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If this message executed a tool, render the ToolExecutionCard
+                            if (msg.toolCall != null) {
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Tap the glowing mic or type an action below.",
-                                    color = TextSecondary,
-                                    fontSize = 13.sp
+                                ToolExecutionCard(
+                                    toolName = msg.toolCall,
+                                    arguments = emptyMap(),
+                                    result = ToolResult(success = true, output = msg.toolResult ?: "Completed")
                                 )
                             }
                         }
                     }
-                }
 
-                items(uiState.messages, key = { it.id }) { msg ->
-                    Column {
-                        ChatMessageBubble(message = msg)
-
-                        // If this message has suggestions (e.g. disambiguation options for multiple contacts)
-                        if (!msg.suggestions.isNullOrEmpty()) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                msg.suggestions.forEach { suggestion ->
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(JarvisCyan.copy(alpha = 0.15f))
-                                            .border(1.dp, JarvisCyan, RoundedCornerShape(16.dp))
-                                            .clickable { viewModel.submitQuery(suggestion) }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = suggestion,
-                                            color = JarvisCyan,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // If this message executed a tool, render the ToolExecutionCard
-                        if (msg.toolCall != null) {
-                            Spacer(modifier = Modifier.height(4.dp))
+                    // If currently executing a tool right now, show live ToolExecutionCard
+                    if (uiState.activeEvent is AgentEvent.ToolExecuting) {
+                        val ev = uiState.activeEvent as AgentEvent.ToolExecuting
+                        item {
                             ToolExecutionCard(
-                                toolName = msg.toolCall,
-                                arguments = emptyMap(),
-                                result = ToolResult(success = true, output = msg.toolResult ?: "Completed")
+                                toolName = ev.toolName,
+                                arguments = ev.arguments,
+                                isExecuting = true
                             )
                         }
                     }
                 }
 
-                // If currently executing a tool right now, show live ToolExecutionCard
-                if (uiState.activeEvent is AgentEvent.ToolExecuting) {
-                    val ev = uiState.activeEvent as AgentEvent.ToolExecuting
-                    item {
-                        ToolExecutionCard(
-                            toolName = ev.toolName,
-                            arguments = ev.arguments,
-                            isExecuting = true
-                        )
+                // Floating Scroll-to-Bottom button when scrolled up
+                val scrollBtnAlpha by androidx.compose.animation.core.animateFloatAsState(
+                    targetValue = if (showScrollToBottom) 1f else 0f,
+                    label = "scrollToBottomAlpha"
+                )
+                if (scrollBtnAlpha > 0.01f) {
+                    Surface(
+                        onClick = {
+                            coroutineScope.launch {
+                                if (uiState.messages.isNotEmpty()) {
+                                    listState.animateScrollToItem(uiState.messages.size - 1)
+                                }
+                            }
+                        },
+                        shape = CircleShape,
+                        color = JarvisSurfaceVariant.copy(alpha = 0.92f),
+                        border = BorderStroke(1.dp, JarvisCyan.copy(alpha = 0.8f)),
+                        shadowElevation = 8.dp,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 20.dp, bottom = 12.dp)
+                            .size(42.dp)
+                            .graphicsLayer {
+                                alpha = scrollBtnAlpha
+                                scaleX = 0.7f + (0.3f * scrollBtnAlpha)
+                                scaleY = 0.7f + (0.3f * scrollBtnAlpha)
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Scroll to bottom",
+                                tint = JarvisCyan,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
             }

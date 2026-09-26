@@ -14,6 +14,7 @@ import com.personalai.jarvis.tools.OpenBrowserTool
 import com.personalai.jarvis.tools.SendMessageTool
 import com.personalai.jarvis.tools.SetAlarmTool
 import com.personalai.jarvis.tools.UiInteractionTool
+import com.personalai.jarvis.tools.YouTubeTool
 import com.personalai.jarvis.voice.SpeechRecognizerHelper
 import com.personalai.jarvis.voice.TextToSpeechHelper
 
@@ -55,6 +56,7 @@ class JarvisApplication : Application() {
             register(UiInteractionTool(this@JarvisApplication))
             register(CallTool(this@JarvisApplication))
             register(CreateNoteTool(memoryRepository))
+            register(YouTubeTool(this@JarvisApplication))
         }
 
         // 3. Initialize Local AI Runtime

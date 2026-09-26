@@ -87,13 +87,20 @@ class SendMessageTool(private val context: Context) : AgentTool {
     }
 
     override suspend fun execute(arguments: Map<String, Any>): ToolResult = withContext(Dispatchers.Main) {
-        val recipientQuery = (arguments["recipient"] as? String)?.trim() ?: ""
+        val rawRecipient = (arguments["recipient"] as? String)?.trim() ?: ""
         val message = (arguments["message"] as? String)?.trim() ?: ""
-        val app = (arguments["app"] as? String)?.lowercase() ?: "sms"
+        val rawApp = (arguments["app"] as? String)?.lowercase() ?: "sms"
 
         if (message.isBlank()) {
             return@withContext ToolResult.error("Message content cannot be blank.")
         }
+
+        // 1. Sanitize app and recipient query
+        val isWhatsApp = rawApp == "whatsapp" || rawRecipient.contains("whatsapp", ignoreCase = true)
+        val app = if (isWhatsApp) "whatsapp" else "sms"
+        val recipientQuery = rawRecipient
+            .replace(Regex("""\s*(?:in|on|via|through|using)\s*(?:whatsapp|whats\s*app|sms|text)\s*""", RegexOption.IGNORE_CASE), "")
+            .trim()
 
         try {
             val candidates = if (recipientQuery.isNotBlank()) findMatchingContacts(recipientQuery) else emptyList()
@@ -108,14 +115,16 @@ class SendMessageTool(private val context: Context) : AgentTool {
             if (candidates.size > 1 && targetContact == null) {
                 // Ambiguous: multiple matching contacts found
                 val formatted = candidates.take(5).mapIndexed { i, c -> "${i + 1}. ${c.name} (${c.number})" }.joinToString("\n")
-                val promptMsg = "Found ${candidates.size} contacts for '$recipientQuery':\n$formatted\n\nWhich one would you like to message?"
-                val suggestions = candidates.take(4).map { "Send message to ${it.name}: $message" }
+                val appLabel = if (app == "whatsapp") "WhatsApp" else "message"
+                val promptMsg = "Found ${candidates.size} contacts for '$recipientQuery':\n$formatted\n\nWhich one would you like to send this $appLabel to?"
+                val suggestions = candidates.take(4).map { "Send $appLabel to ${it.name}: $message" }
 
                 return@withContext ToolResult.success(
                     output = promptMsg,
                     data = mapOf(
                         "requires_disambiguation" to true,
                         "task_type" to "message",
+                        "app" to app,
                         "query" to recipientQuery,
                         "message_body" to message,
                         "suggestions" to suggestions,
@@ -128,17 +137,43 @@ class SendMessageTool(private val context: Context) : AgentTool {
             val displayName = targetContact?.name ?: recipientQuery
 
             if (app == "whatsapp") {
-                val cleanPhone = finalNumber.replace(Regex("[^0-9+]"), "")
-                val uri = if (cleanPhone.isNotEmpty()) {
-                    Uri.parse("https://api.whatsapp.com/send?phone=$cleanPhone&text=${URLEncoder.encode(message, "UTF-8")}")
+                var digitsOnly = finalNumber.replace(Regex("[^0-9]"), "")
+                if (digitsOnly.length == 10) {
+                    // Standard 10-digit Indian number without country code
+                    digitsOnly = "91$digitsOnly"
+                } else if (digitsOnly.length == 11 && digitsOnly.startsWith("0")) {
+                    // 0-prefixed 10-digit number -> replace leading 0 with 91
+                    digitsOnly = "91" + digitsOnly.substring(1)
+                }
+
+                val encodedMsg = URLEncoder.encode(message, "UTF-8")
+                val uri = if (digitsOnly.isNotEmpty()) {
+                    Uri.parse("https://api.whatsapp.com/send?phone=$digitsOnly&text=$encodedMsg")
                 } else {
-                    Uri.parse("whatsapp://send?text=${URLEncoder.encode(message, "UTF-8")}")
+                    Uri.parse("whatsapp://send?text=$encodedMsg")
                 }
-                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                    setPackage("com.whatsapp")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+                val packagesToTry = listOf("com.whatsapp", "com.whatsapp.w4b")
+                var started = false
+                for (pkg in packagesToTry) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                            setPackage(pkg)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                        started = true
+                        break
+                    } catch (_: Exception) {}
                 }
-                context.startActivity(intent)
+
+                if (!started) {
+                    val genericIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(genericIntent)
+                }
+
                 ToolResult.success("WhatsApp opened with draft to $displayName ($finalNumber).")
             } else {
                 // SMS

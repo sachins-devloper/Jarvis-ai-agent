@@ -86,13 +86,18 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
                     ```
                     """.trimIndent()
                 } else if (actionType.contains("message") || actionType.contains("send")) {
+                    val prevIsWhatsApp = prompt.contains("whatsapp", ignoreCase = true)
+                    val appJson = if (prevIsWhatsApp) """,\n    "app": "whatsapp"""" else ""
+                    // Try to preserve original message content from earlier history
+                    val bodyRegex = Regex("""(?:message|body|saying|text)[:=]?\s*["']?([^"'\n]+)["']?""", RegexOption.IGNORE_CASE)
+                    val origMsg = bodyRegex.findAll(prompt).lastOrNull()?.groupValues?.get(1)?.trim()?.ifBlank { "Hello" } ?: "Hello"
                     return """
                     ```json
                     {
                       "tool": "send_message",
                       "arguments": {
                         "recipient": "$chosenCandidate",
-                        "message": "Hello"
+                        "message": "$origMsg"$appJson
                       }
                     }
                     ```
@@ -113,6 +118,51 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
         }
 
         val lower = userText.lowercase()
+
+        // 0. Quick Math Calculation (Answer immediately without invoking device tools)
+        val mathPattern = Regex("""^(?:what is|calculate|solve|evaluate)?\s*(\d+(?:\.\d+)?)\s*([\+\-\*\/xX×÷])\s*(\d+(?:\.\d+)?)\s*\??$""", RegexOption.IGNORE_CASE)
+        val mathMatch = mathPattern.find(userText.trim())
+        if (mathMatch != null) {
+            val a = mathMatch.groupValues[1].toDoubleOrNull()
+            val op = mathMatch.groupValues[2].lowercase()
+            val b = mathMatch.groupValues[3].toDoubleOrNull()
+            if (a != null && b != null) {
+                val res = when (op) {
+                    "+" -> a + b
+                    "-" -> a - b
+                    "*", "x", "×" -> a * b
+                    "/", "÷" -> if (b != 0.0) a / b else null
+                    else -> null
+                }
+                if (res != null) {
+                    val formattedRes = if (res % 1.0 == 0.0) res.toLong().toString() else res.toString()
+                    val formattedA = if (a % 1.0 == 0.0) a.toLong().toString() else a.toString()
+                    val formattedB = if (b % 1.0 == 0.0) b.toLong().toString() else b.toString()
+                    val opSymbol = if (op == "x" || op == "X") "×" else op
+                    return "$formattedA $opSymbol $formattedB = $formattedRes"
+                }
+            }
+        }
+
+        // 0.1 YouTube Video / Music Playback Intent
+        if (lower.startsWith("play ") || (lower.contains("youtube") && !lower.startsWith("open youtube")) || lower.startsWith("watch ")) {
+            val ytQuery = userText
+                .replace(Regex("""^(?:play|watch|search\s+for|search)\s+""", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\s+(?:on|in|using)\s+youtube\b""", RegexOption.IGNORE_CASE), "")
+                .trim()
+            if (ytQuery.isNotBlank() && !ytQuery.equals("youtube", ignoreCase = true)) {
+                return """
+                ```json
+                {
+                  "tool": "play_youtube",
+                  "arguments": {
+                    "query": "$ytQuery"
+                  }
+                }
+                ```
+                """.trimIndent()
+            }
+        }
 
         // 1. App Launching Intent
         val openAppPattern = Pattern.compile("""(?:open|launch|start|run)\s+(?:the\s+)?([a-zA-Z0-9\s]+?)(?:\s+app)?$""", Pattern.CASE_INSENSITIVE)
@@ -166,20 +216,24 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
         }
 
         // 3. Search / Web Intent
-        val searchRegex = Regex("""(?:search|google|browse|look up)\s+(?:for\s+)?(.*)""", RegexOption.IGNORE_CASE)
+        val searchRegex = Regex("""^(?:search|searh|google|browse|look up)(?:\s+for|:|\s+)?\s*(.*)""", RegexOption.IGNORE_CASE)
         val searchMatch = searchRegex.find(userText)
         if (searchMatch != null) {
             val query = searchMatch.groupValues[1].trim()
-            return """
-            ```json
-            {
-              "tool": "open_browser",
-              "arguments": {
-                "query": "$query"
-              }
+            if (query.isNotBlank()) {
+                return """
+                ```json
+                {
+                  "tool": "open_browser",
+                  "arguments": {
+                    "query": "$query"
+                  }
+                }
+                ```
+                """.trimIndent()
+            } else {
+                return "What would you like me to search for? For example: 'search for latest tech news'."
             }
-            ```
-            """.trimIndent()
         }
         if (lower.startsWith("http://") || lower.startsWith("https://") || lower.endsWith(".com")) {
             return """
@@ -194,7 +248,46 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
-        // 4. Device Controls (Flashlight, Volume, Settings)
+        // 4. Device Controls (Storage, Apps, Screenshot, Flashlight, Volume, Battery, Settings)
+        if (lower.contains("storage") || lower.contains("disk space") || lower.contains("memory space") || lower.contains("internal memory") || lower.contains("free space")) {
+            return """
+            ```json
+            {
+              "tool": "device_control",
+              "arguments": {
+                "action": "storage_status"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        if (lower.contains("what apps are installed") || lower.contains("list installed apps") || lower.contains("list apps") || lower.contains("show installed apps") || lower.contains("all apps")) {
+            return """
+            ```json
+            {
+              "tool": "device_control",
+              "arguments": {
+                "action": "list_installed_apps"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        if (lower.contains("screenshot") || lower.contains("capture screen") || lower.contains("take a screen shot")) {
+            return """
+            ```json
+            {
+              "tool": "device_control",
+              "arguments": {
+                "action": "take_screenshot"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
         if (lower.contains("flashlight") || lower.contains("torch")) {
             val action = if (lower.contains("off")) "flashlight_off" else "flashlight_on"
             return """
@@ -281,43 +374,115 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
-        // 7. Messaging Intent
-        // Pattern A: "send hello message to akshaya" or "send a quick message to John"
-        val sendMsgToPattern = Regex("""(?:send|write)\s+(?:a\s+)?(.+?)\s+message\s+to\s+([a-zA-Z0-9\s]+)$""", RegexOption.IGNORE_CASE)
-        val sendMsgToMatch = sendMsgToPattern.find(userText)
-        if (sendMsgToMatch != null) {
-            val messageContent = sendMsgToMatch.groupValues[1].trim()
-            val recipient = sendMsgToMatch.groupValues[2].trim()
+        // 7. Messaging Intent (SMS / WhatsApp)
+        val isWhatsApp = lower.contains("whatsapp") || lower.contains("whats app")
+        val appValue = if (isWhatsApp) "whatsapp" else "sms"
+
+        // Strip app/platform markers from query text to cleanly isolate recipient and message
+        // e.g. "send hello message to Akshaya in WhatsApp" -> "send hello message to Akshaya"
+        val cleanMsgUserText = userText.replace(
+            Regex("""\s*(?:in|on|via|through|using)\s*(?:whatsapp|whats\s*app|sms|text)\s*""", RegexOption.IGNORE_CASE),
+            ""
+        ).trim()
+
+        // Pattern 1: Explicit "send message to <recipient> saying/colon/that <message>"
+        // e.g. "send message to Akshaya saying hello", "send whatsapp to Akshaya: where are you"
+        val patternSaying = Regex(
+            """^(?:send\s+)?(?:a\s+)?(?:message|msg|text|whatsapp)\s+to\s+([a-zA-Z0-9\s+]+?)(?:\s+(?:saying|that|with message)\s*|[:,-]\s*|\s+)(.+)$""",
+            RegexOption.IGNORE_CASE
+        )
+        val matchSaying = patternSaying.find(cleanMsgUserText)
+        if (matchSaying != null) {
+            val r = matchSaying.groupValues[1].trim()
+            val m = matchSaying.groupValues[2].trim().ifBlank { "Hello" }
             return """
             ```json
             {
               "tool": "send_message",
               "arguments": {
-                "recipient": "$recipient",
-                "message": "$messageContent"
+                "recipient": "$r",
+                "message": "$m",
+                "app": "$appValue"
               }
             }
             ```
             """.trimIndent()
         }
 
-        // Pattern B: "send message to akshaya saying hello" / "text akshaya hello" / "message John: are you free?"
-        if (lower.contains("send message") || lower.contains("text ") || lower.contains("whatsapp") || lower.startsWith("message ")) {
-            val msgPatternB = Regex("""(?:send\s+)?(?:message|text|whatsapp)\s+(?:to\s+)?([a-zA-Z0-9\s]+?)(?:\s+(?:saying|that|with message)\s*|[:,-]\s*|\s+)(.*)""", RegexOption.IGNORE_CASE)
-            val mMatch = msgPatternB.find(userText)
-            val recipient = mMatch?.groupValues?.get(1)?.trim() ?: "Contact"
-            val message = mMatch?.groupValues?.get(2)?.trim()?.ifBlank { "Hello" } ?: "Hello"
+        // Pattern 2: "send <message> message/msg to <recipient>"
+        // e.g. "send hello message to Akshaya", "send good morning msg to Mom"
+        val patternMsgTo = Regex(
+            """^(?:send|write)\s+(?:a\s+)?(.+?)\s+(?:message|msg)\s+to\s+([a-zA-Z0-9\s+]+)$""",
+            RegexOption.IGNORE_CASE
+        )
+        val matchMsgTo = patternMsgTo.find(cleanMsgUserText)
+        if (matchMsgTo != null) {
+            val m = matchMsgTo.groupValues[1].trim().ifBlank { "Hello" }
+            val r = matchMsgTo.groupValues[2].trim()
             return """
             ```json
             {
               "tool": "send_message",
               "arguments": {
-                "recipient": "$recipient",
-                "message": "$message"
+                "recipient": "$r",
+                "message": "$m",
+                "app": "$appValue"
               }
             }
             ```
             """.trimIndent()
+        }
+
+        // Pattern 3: "whatsapp/text/message <recipient> <message>"
+        // e.g. "whatsapp Akshaya hello", "text Akshaya are you free", "message Mom I am home"
+        val patternDirect = Regex(
+            """^(?:whatsapp|text|message|msg)\s+([a-zA-Z0-9\s+]+?)(?:\s*[:,-]\s*|\s+)(.+)$""",
+            RegexOption.IGNORE_CASE
+        )
+        val matchDirect = patternDirect.find(cleanMsgUserText)
+        if (matchDirect != null) {
+            val r = matchDirect.groupValues[1].trim()
+            val m = matchDirect.groupValues[2].trim().ifBlank { "Hello" }
+            return """
+            ```json
+            {
+              "tool": "send_message",
+              "arguments": {
+                "recipient": "$r",
+                "message": "$m",
+                "app": "$appValue"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        // Pattern 4: "send <message> to <recipient>" (when user mentioned whatsapp, sms, or text)
+        // e.g. "send hello to Akshaya in WhatsApp", "send happy birthday to Arun"
+        if (isWhatsApp || lower.contains("send ") || lower.contains("text")) {
+            val patternSendTo = Regex(
+                """^(?:send|write)\s+(?:a\s+)?(.+?)\s+to\s+([a-zA-Z0-9\s+]+)$""",
+                RegexOption.IGNORE_CASE
+            )
+            val matchSendTo = patternSendTo.find(cleanMsgUserText)
+            if (matchSendTo != null) {
+                val m = matchSendTo.groupValues[1].trim().ifBlank { "Hello" }
+                val r = matchSendTo.groupValues[2].trim()
+                if (r.isNotBlank() && !r.equals("youtube", ignoreCase = true) && !r.equals("google", ignoreCase = true)) {
+                    return """
+                    ```json
+                    {
+                      "tool": "send_message",
+                      "arguments": {
+                        "recipient": "$r",
+                        "message": "$m",
+                        "app": "$appValue"
+                      }
+                    }
+                    ```
+                    """.trimIndent()
+                }
+            }
         }
 
         // 8. General Knowledge & Conversational Q&A
@@ -365,20 +530,24 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
                 return "Goodbye! Call me anytime you need assistance."
         }
 
-        // 9. Autonomous Search for any query, question, or unknown search intent (e.g. "cheif minister vijay", "what is X")
-        if (userText.isNotBlank()) {
-            return """
-            ```json
-            {
-              "tool": "open_browser",
-              "arguments": {
-                "query": "$userText"
-              }
-            }
-            ```
-            """.trimIndent()
+        // 9. Conversational Knowledge & Entity Answers in Chat
+        when {
+            lower.contains("youtube") ->
+                return "YouTube is a global online video sharing and streaming platform owned by Google. It allows users to watch, upload, share, and comment on videos across music, education, news, and entertainment."
+
+            lower.contains("vijay") ->
+                return "Vijay (Joseph Vijay) is a prominent Indian actor and politician in Tamil Nadu. In February 2024, he founded his political party, Tamilaga Vettri Kazhagam (TVK), aiming for the 2026 Tamil Nadu Legislative Assembly elections."
+
+            lower.contains("weather") ->
+                return "For live real-time local weather updates, ask me to 'Search weather in my city' or open your weather app."
+
+            lower.contains("joke") ->
+                return "Why don't programmers like nature? It has too many bugs!"
+
+            lower.contains("time") ->
+                return "You can check the current time on your phone's status bar, or ask me to set an alarm for a specific time."
         }
 
-        return "I am ready. Ask me to launch an app, make a call, send a message, check battery, or search for any information."
+        return "I am running locally on your device. I can launch apps, make calls, compose messages, check your battery, or control hardware settings. If you want live web results for '$userText', simply say 'Search for $userText'."
     }
 }

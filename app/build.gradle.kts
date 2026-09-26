@@ -44,6 +44,9 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 }
 
@@ -61,9 +64,21 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.gson)
 
+    // Local llama.cpp Android Native Engine
+    implementation("org.codeshipping:llama-kotlin-android:0.1.0") {
+        exclude(group = "androidx.core")
+    }
+
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
 
     debugImplementation(libs.androidx.ui.tooling)
+}
+
+configurations.all {
+    resolutionStrategy {
+        force("androidx.core:core-ktx:1.13.1")
+        force("androidx.core:core:1.13.1")
+    }
 }
