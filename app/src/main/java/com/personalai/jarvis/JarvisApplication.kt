@@ -5,6 +5,7 @@ import com.personalai.jarvis.agent.Agent
 import com.personalai.jarvis.agent.ToolRegistry
 import com.personalai.jarvis.ai.LocalLLM
 import com.personalai.jarvis.memory.MemoryRepository
+import com.personalai.jarvis.tools.CallTool
 import com.personalai.jarvis.tools.CreateNoteTool
 import com.personalai.jarvis.tools.DeviceControlTool
 import com.personalai.jarvis.tools.NotificationTool
@@ -52,6 +53,7 @@ class JarvisApplication : Application() {
             register(DeviceControlTool(this@JarvisApplication))
             register(NotificationTool(this@JarvisApplication))
             register(UiInteractionTool(this@JarvisApplication))
+            register(CallTool(this@JarvisApplication))
             register(CreateNoteTool(memoryRepository))
         }
 

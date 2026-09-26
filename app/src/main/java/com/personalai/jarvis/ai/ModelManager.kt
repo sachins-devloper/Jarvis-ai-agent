@@ -31,10 +31,10 @@ class ModelManager(private val context: Context) {
         val PRESET_MODELS = listOf(
             ModelInfo(
                 id = "smollm2_360m",
-                name = "SmolLM2 360M Instruct (Q4_K_M)",
-                filename = "smollm2-360m-instruct-q4_k_m.gguf",
-                sizeBytes = 229_000_000L,
-                downloadUrl = "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q4_k_m.gguf",
+                name = "SmolLM2 360M Instruct (Q8_0)",
+                filename = "smollm2-360m-instruct-q8_0.gguf",
+                sizeBytes = 380_000_000L,
+                downloadUrl = "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf",
                 description = "Ultra-lightweight mobile LLM. Extremely fast inference, <500MB RAM.",
                 recommendedRamMb = 1024
             ),
@@ -62,17 +62,31 @@ class ModelManager(private val context: Context) {
     fun getModelsDirectory(): File = modelsDir
 
     fun getLocalModels(): List<File> {
-        val files = modelsDir.listFiles { file -> file.extension.lowercase() == "gguf" }?.toList() ?: emptyList()
-        return files.sortedByDescending { it.lastModified() }
+        val searchDirs = listOfNotNull(
+            modelsDir,
+            context.getExternalFilesDir("models"),
+            File(android.os.Environment.getExternalStorageDirectory(), "Download"),
+            File(android.os.Environment.getExternalStorageDirectory(), "Download/models")
+        )
+
+        val results = mutableListOf<File>()
+        searchDirs.forEach { dir ->
+            if (dir.exists() && dir.isDirectory) {
+                dir.listFiles { file -> file.isFile && file.extension.lowercase() == "gguf" }?.let {
+                    results.addAll(it)
+                }
+            }
+        }
+        return results.distinctBy { it.name }.sortedByDescending { it.lastModified() }
     }
 
     fun isModelDownloaded(modelInfo: ModelInfo): Boolean {
-        val file = File(modelsDir, modelInfo.filename)
-        return file.exists() && file.length() > 0
+        return getLocalModels().any { it.name.equals(modelInfo.filename, ignoreCase = true) }
     }
 
     fun getModelFile(modelInfo: ModelInfo): File {
-        return File(modelsDir, modelInfo.filename)
+        return getLocalModels().firstOrNull { it.name.equals(modelInfo.filename, ignoreCase = true) }
+            ?: File(modelsDir, modelInfo.filename)
     }
 
     /**

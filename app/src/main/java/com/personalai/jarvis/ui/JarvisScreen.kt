@@ -41,6 +41,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -370,13 +373,15 @@ fun JarvisScreen(
                 }
             }
 
-            // 6. Bottom Input & Glowing Microphone Bar
+            // 6. Bottom Input & Glowing Microphone / Send Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val hasText = inputText.isNotBlank()
+
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
@@ -387,43 +392,47 @@ fun JarvisScreen(
                             fontSize = 13.sp
                         )
                     },
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(24.dp)),
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(26.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = JarvisCyan,
                         unfocusedBorderColor = JarvisBorder,
                         focusedContainerColor = JarvisSurface,
                         unfocusedContainerColor = JarvisSurface,
                         focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = JarvisCyan
                     ),
-                    maxLines = 3,
-                    trailingIcon = {
-                        if (inputText.isNotBlank()) {
-                            IconButton(onClick = {
-                                val query = inputText
+                    maxLines = 4,
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = if (hasText) ImeAction.Send else ImeAction.Default
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (hasText) {
+                                val query = inputText.trim()
                                 inputText = ""
                                 viewModel.submitQuery(query)
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Send,
-                                    contentDescription = "Send",
-                                    tint = JarvisCyan
-                                )
                             }
                         }
-                    }
+                    )
                 )
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                // Glowing animated Voice Microphone Button
+                // Glowing animated Voice / Send Button
                 GlowingMicButton(
                     isListening = uiState.isListening,
                     rmsLevel = uiState.rmsLevel,
+                    hasText = hasText,
                     onClick = {
-                        viewModel.toggleVoiceInput()
+                        if (hasText) {
+                            val query = inputText.trim()
+                            inputText = ""
+                            viewModel.submitQuery(query)
+                        } else {
+                            viewModel.toggleVoiceInput()
+                        }
                     }
                 )
             }

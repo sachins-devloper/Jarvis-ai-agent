@@ -43,8 +43,13 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
-        // Load initial messages
+        // Load initial messages and check for local GGUF models
         viewModelScope.launch {
+            val localModels = localLLM.modelManager.getLocalModels()
+            if (localModels.isNotEmpty() && !localLLM.isUsingGGUF()) {
+                val modelFile = localModels.first()
+                localLLM.loadGGUFModel(modelFile)
+            }
             val initialMsgs = memoryRepo.getRecentMessages(30)
             _uiState.value = _uiState.value.copy(
                 messages = initialMsgs,

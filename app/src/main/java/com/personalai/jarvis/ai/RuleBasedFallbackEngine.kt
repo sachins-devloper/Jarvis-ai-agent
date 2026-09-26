@@ -191,12 +191,49 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
-        // 6. Messaging
-        if (lower.contains("send message") || lower.contains("text ") || lower.contains("whatsapp")) {
-            val msgRegex = Regex("""(?:message|text|whatsapp)\s+([a-zA-Z0-9\s]+?)\s+(?:saying|that|with message)?\s*[:,-]?\s*(.*)""", RegexOption.IGNORE_CASE)
-            val mMatch = msgRegex.find(userText)
+        // 6. Calling Intent (e.g. "call Mom", "dial 9876543210", "make a call to John")
+        val callPattern = Regex("""^(?:call|dial|phone|make a call to)\s+([a-zA-Z0-9\s+]+)$""", RegexOption.IGNORE_CASE)
+        val callMatch = callPattern.find(userText.trim())
+        if (callMatch != null) {
+            val contact = callMatch.groupValues[1].trim()
+            return """
+            ```json
+            {
+              "tool": "make_call",
+              "arguments": {
+                "contact": "$contact"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        // 7. Messaging Intent
+        // Pattern A: "send hello message to akshaya" or "send a quick message to John"
+        val sendMsgToPattern = Regex("""(?:send|write)\s+(?:a\s+)?(.+?)\s+message\s+to\s+([a-zA-Z0-9\s]+)$""", RegexOption.IGNORE_CASE)
+        val sendMsgToMatch = sendMsgToPattern.find(userText)
+        if (sendMsgToMatch != null) {
+            val messageContent = sendMsgToMatch.groupValues[1].trim()
+            val recipient = sendMsgToMatch.groupValues[2].trim()
+            return """
+            ```json
+            {
+              "tool": "send_message",
+              "arguments": {
+                "recipient": "$recipient",
+                "message": "$messageContent"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        // Pattern B: "send message to akshaya saying hello" / "text akshaya hello" / "message John: are you free?"
+        if (lower.contains("send message") || lower.contains("text ") || lower.contains("whatsapp") || lower.startsWith("message ")) {
+            val msgPatternB = Regex("""(?:send\s+)?(?:message|text|whatsapp)\s+(?:to\s+)?([a-zA-Z0-9\s]+?)(?:\s+(?:saying|that|with message)\s*|[:,-]\s*|\s+)(.*)""", RegexOption.IGNORE_CASE)
+            val mMatch = msgPatternB.find(userText)
             val recipient = mMatch?.groupValues?.get(1)?.trim() ?: "Contact"
-            val message = mMatch?.groupValues?.get(2)?.trim() ?: userText
+            val message = mMatch?.groupValues?.get(2)?.trim()?.ifBlank { "Hello" } ?: "Hello"
             return """
             ```json
             {
@@ -210,7 +247,9 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
-        // 7. General Conversational / Knowledge Questions (Local offline answering)
+        // 8. General Conversational / Knowledge Questions (Local offline answering)
+        val isGreeting = Regex("""^(?:hello|hi|hey|good\s+morning|good\s+evening|good\s+afternoon)[\s!.,?]*$""", RegexOption.IGNORE_CASE).matches(lower)
+
         return when {
             lower.contains("what is python") ->
                 "Python is a high-level, general-purpose programming language known for its clear, readable syntax. It is widely used in data science, artificial intelligence, backend development, and automation."
@@ -219,13 +258,13 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
                 "I am Jarvis, your personal local Android AI agent. I run completely on-device without relying on external cloud APIs, allowing me to execute phone tasks, manage tools, and converse securely."
 
             lower.contains("what can you do") || lower.contains("help") ->
-                "I can launch applications, set alarms, search the web, control device settings (like flashlight and volume), take notes, draft messages, and automate UI actions on your phone—all locally without the cloud."
+                "I can launch applications, set alarms, make phone calls, send messages, search the web, control hardware (like flashlight and volume), take notes, and automate UI actions on your phone—all locally without the cloud."
 
-            lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ->
+            isGreeting ->
                 "Hello! Jarvis online and ready. What can I help you do on your phone today?"
 
             else ->
-                "Understood. I am processing your request locally on your device. Let me know if you want me to launch an app, set an alarm, take a note, or search for information."
+                "Understood. I am processing your request locally on your device. Let me know if you want me to launch an app, make a call, send a message, set an alarm, or search for information."
         }
     }
 }
