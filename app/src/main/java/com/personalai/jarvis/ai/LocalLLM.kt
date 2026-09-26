@@ -112,4 +112,16 @@ class LocalLLM(private val context: Context) {
     ): String {
         return activeEngine.generateComplete(prompt, temperature, maxTokens)
     }
+
+    suspend fun analyzeImage(
+        prompt: String,
+        imageBase64: String,
+        mimeType: String = "image/jpeg"
+    ): String {
+        return if (openAiEnabled && openAiEngine.isLoaded) {
+            openAiEngine.analyzeImage(prompt, imageBase64, mimeType)
+        } else {
+            "Vision analysis requires OpenAI Cloud Intelligence (GPT-4o or GPT-4o-mini). Please enable OpenAI with your API key in Settings to inspect photos and camera shots."
+        }
+    }
 }

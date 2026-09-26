@@ -1,6 +1,10 @@
 package com.personalai.jarvis.ui.components
 
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,8 +22,13 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import com.personalai.jarvis.R
+import com.personalai.jarvis.ui.theme.JarvisBorder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +92,16 @@ fun ChatMessageBubble(
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Column {
+                if (!message.imageUri.isNullOrBlank()) {
+                    AttachedImageView(
+                        uriString = message.imageUri,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .padding(bottom = 6.dp)
+                    )
+                }
+
                 if (isUser) {
                     Text(
                         text = message.text,
@@ -121,5 +140,35 @@ fun ChatMessageBubble(
         } else {
             Spacer(modifier = Modifier.weight(1f))
         }
+    }
+}
+
+@Composable
+private fun AttachedImageView(
+    uriString: String,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val bitmap = remember(uriString) {
+        try {
+            val uri = Uri.parse(uriString)
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val bmp = BitmapFactory.decodeStream(inputStream)
+            inputStream?.close()
+            bmp?.asImageBitmap()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = "Attached photo",
+            contentScale = ContentScale.Crop,
+            modifier = modifier
+                .clip(RoundedCornerShape(8.dp))
+                .border(1.dp, JarvisBorder, RoundedCornerShape(8.dp))
+        )
     }
 }

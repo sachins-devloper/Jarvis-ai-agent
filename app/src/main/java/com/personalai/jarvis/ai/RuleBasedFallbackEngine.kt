@@ -218,6 +218,20 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
+        // 2.85 Multimodal Vision / Image Analysis Intent
+        if (lower.startsWith("analyze image") || lower.startsWith("analyze photo") || lower.startsWith("describe image") || lower.startsWith("describe photo") || lower.startsWith("what is in this picture") || lower.startsWith("inspect photo") || lower.startsWith("inspect image")) {
+            return """
+            ```json
+            {
+              "tool": "analyze_image",
+              "arguments": {
+                "prompt": "$userText"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
         // 2.9 Local Device File / Media Search Intent (Images, Music, Video, Documents, Files)
         val fileTypePattern = Regex("""\b(find|search|show|locate|list|get)\s+(?:all\s+)?(?:my\s+)?(files?|images?|imgs?|photos?|musics?|songs?|audio|videos?|movies?|documents?|docs?|pdfs?)(?:\s+(?:such\s+as|like|including|named|with|called|for|of|matching)\s+)?(.*)?$""", RegexOption.IGNORE_CASE)
         val fileMatch = fileTypePattern.find(userText)

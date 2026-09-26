@@ -564,6 +564,7 @@ fun SettingsScreen(
                 val hasCall = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
                 val hasContacts = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
                 val hasCallLog = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+                val hasCamera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                 val hasStorage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
                     ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -572,6 +573,7 @@ fun SettingsScreen(
                 }
 
                 PermissionItem(name = "Microphone (Voice)", isGranted = hasAudio)
+                PermissionItem(name = "Camera (Vision AI)", isGranted = hasCamera)
                 PermissionItem(name = "Direct Phone Call", isGranted = hasCall)
                 PermissionItem(name = "Contacts Lookup", isGranted = hasContacts)
                 PermissionItem(name = "Call Log & Missed Calls", isGranted = hasCallLog)

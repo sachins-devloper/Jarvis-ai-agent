@@ -17,6 +17,7 @@ import com.personalai.jarvis.tools.OpenBrowserTool
 import com.personalai.jarvis.tools.SendMessageTool
 import com.personalai.jarvis.tools.SetAlarmTool
 import com.personalai.jarvis.tools.UiInteractionTool
+import com.personalai.jarvis.tools.AnalyzeImageTool
 import com.personalai.jarvis.tools.FileSearchTool
 import com.personalai.jarvis.tools.YouTubeTool
 import com.personalai.jarvis.voice.SpeechRecognizerHelper
@@ -69,6 +70,9 @@ class JarvisApplication : Application() {
 
         // 3. Initialize Local AI Runtime
         localLLM = LocalLLM(this)
+
+        // Register vision tools that use LocalLLM
+        toolRegistry.register(AnalyzeImageTool(this@JarvisApplication, localLLM))
 
         // 4. Initialize Agent
         agent = Agent(

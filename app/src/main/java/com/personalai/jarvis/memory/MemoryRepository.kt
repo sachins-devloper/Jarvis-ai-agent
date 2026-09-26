@@ -20,6 +20,7 @@ data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val sender: String, // "user", "jarvis", "system"
     val text: String,
+    val imageUri: String? = null,
     val toolCall: String? = null,
     val toolResult: String? = null,
     val suggestions: List<String>? = emptyList(),

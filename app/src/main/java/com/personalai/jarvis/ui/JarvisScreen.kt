@@ -39,6 +39,18 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.DeleteOutline
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.core.content.FileProvider
+import com.personalai.jarvis.utils.ImageHelper
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Send
@@ -109,6 +121,24 @@ fun JarvisScreen(
     val coroutineScope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
     var showSettings by remember { mutableStateOf(false) }
+    var stagedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var cameraTempUri by remember { mutableStateOf<Uri?>(null) }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            stagedImageUri = uri
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (success && cameraTempUri != null) {
+            stagedImageUri = cameraTempUri
+        }
+    }
 
     if (showSettings) {
         SettingsScreen(
@@ -456,24 +486,138 @@ fun JarvisScreen(
                 }
             }
 
+            // Attached Image Preview Strip (if user picked an image from camera or gallery)
+            AnimatedVisibility(
+                visible = stagedImageUri != null,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                stagedImageUri?.let { uri ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = JarvisSurfaceVariant,
+                            border = BorderStroke(1.dp, JarvisCyan.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val thumbBmp = remember(uri) {
+                                    try {
+                                        val stream = context.contentResolver.openInputStream(uri)
+                                        val bmp = BitmapFactory.decodeStream(stream)
+                                        stream?.close()
+                                        bmp?.asImageBitmap()
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                }
+                                if (thumbBmp != null) {
+                                    Image(
+                                        bitmap = thumbBmp,
+                                        contentDescription = "Attached photo",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "Photo Attached",
+                                        color = JarvisCyan,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "GPT-4o Vision Ready",
+                                        color = TextSecondary,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { stagedImageUri = null },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove photo",
+                                        tint = TextMuted,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Bottom Input & Glowing Microphone / Send Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val hasText = inputText.isNotBlank()
+                val hasContent = inputText.isNotBlank() || stagedImageUri != null
 
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
                     placeholder = {
                         Text(
-                            text = if (uiState.isListening) "Listening to your voice..." else "Ask Jarvis to run a phone task...",
+                            text = if (stagedImageUri != null) "Ask about this photo..." else if (uiState.isListening) "Listening to your voice..." else "Ask Jarvis to run a phone task...",
                             color = TextMuted,
                             fontSize = 13.sp
                         )
+                    },
+                    trailingIcon = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(end = 4.dp)
+                        ) {
+                            // Gallery Picker Button
+                            IconButton(
+                                onClick = { galleryLauncher.launch("image/*") },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Image,
+                                    contentDescription = "Pick Image from Gallery",
+                                    tint = if (stagedImageUri != null) JarvisCyan else TextSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Camera Snapshot Button
+                            IconButton(
+                                onClick = {
+                                    val photoFile = ImageHelper.createTempCameraFile(context)
+                                    val photoUri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        photoFile
+                                    )
+                                    cameraTempUri = photoUri
+                                    cameraLauncher.launch(photoUri)
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = "Take Photo with Camera",
+                                    tint = TextSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(26.dp),
@@ -488,31 +632,35 @@ fun JarvisScreen(
                     ),
                     maxLines = 4,
                     keyboardOptions = KeyboardOptions(
-                        imeAction = if (hasText) ImeAction.Send else ImeAction.Default
+                        imeAction = if (hasContent) ImeAction.Send else ImeAction.Default
                     ),
                     keyboardActions = KeyboardActions(
                         onSend = {
-                            if (hasText) {
+                            if (hasContent) {
                                 val query = inputText.trim()
+                                val imageToSubmit = stagedImageUri
                                 inputText = ""
-                                viewModel.submitQuery(query)
+                                stagedImageUri = null
+                                viewModel.submitQuery(query, imageToSubmit)
                             }
                         }
                     )
                 )
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 // Glowing animated Voice / Send Button
                 GlowingMicButton(
                     isListening = uiState.isListening,
                     rmsLevel = uiState.rmsLevel,
-                    hasText = hasText,
+                    hasText = hasContent,
                     onClick = {
-                        if (hasText) {
+                        if (hasContent) {
                             val query = inputText.trim()
+                            val imageToSubmit = stagedImageUri
                             inputText = ""
-                            viewModel.submitQuery(query)
+                            stagedImageUri = null
+                            viewModel.submitQuery(query, imageToSubmit)
                         } else {
                             viewModel.toggleVoiceInput()
                         }

@@ -1,6 +1,7 @@
 package com.personalai.jarvis.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.personalai.jarvis.JarvisApplication
@@ -11,6 +12,7 @@ import com.personalai.jarvis.memory.ChatMessage
 import com.personalai.jarvis.services.JarvisAccessibilityService
 import com.personalai.jarvis.services.JarvisNotificationListenerService
 import com.personalai.jarvis.ui.components.cleanMarkdownForSpeech
+import com.personalai.jarvis.utils.ImageHelper
 import com.personalai.jarvis.voice.VoiceState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -165,11 +167,16 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    fun submitQuery(userText: String, speakResult: Boolean = false) {
-        if (userText.isBlank()) return
+    fun submitQuery(userText: String, imageUri: Uri? = null, speakResult: Boolean = false) {
+        if (userText.isBlank() && imageUri == null) return
 
         val trimmed = userText.trim()
-        val tempUserMsg = ChatMessage(sender = "user", text = trimmed)
+        val displayText = if (trimmed.isBlank() && imageUri != null) "Describe this image" else trimmed
+        val tempUserMsg = ChatMessage(
+            sender = "user",
+            text = displayText,
+            imageUri = imageUri?.toString()
+        )
         val currentList = _uiState.value.messages.toMutableList().apply { add(tempUserMsg) }
         _uiState.value = _uiState.value.copy(
             messages = currentList,
@@ -177,9 +184,36 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         )
 
         viewModelScope.launch {
-            val response = agent.execute(trimmed)
-            if (_uiState.value.autoSpeak && response.isNotBlank()) {
-                tts.speak(cleanMarkdownForSpeech(response))
+            if (imageUri != null) {
+                _uiState.value = _uiState.value.copy(
+                    activeEvent = AgentEvent.Thinking("Inspecting image with GPT-4o Vision...")
+                )
+                val base64 = ImageHelper.uriToBase64(app, imageUri)
+                val response = if (base64 != null) {
+                    val visionPrompt = if (trimmed.isNotBlank()) trimmed else "Describe and analyze this image in detail. Extract any relevant text, objects, and key information."
+                    localLLM.analyzeImage(prompt = visionPrompt, imageBase64 = base64)
+                } else {
+                    "Unable to load the attached image. Please try again."
+                }
+
+                val assistantMsg = ChatMessage(sender = "jarvis", text = response)
+                memoryRepo.saveMessage(tempUserMsg)
+                memoryRepo.saveMessage(assistantMsg)
+
+                val updatedList = memoryRepo.getRecentMessages(30)
+                _uiState.value = _uiState.value.copy(
+                    messages = updatedList,
+                    activeEvent = AgentEvent.Completed(displayText, response, emptyList())
+                )
+
+                if ((_uiState.value.autoSpeak || speakResult) && response.isNotBlank()) {
+                    tts.speak(cleanMarkdownForSpeech(response))
+                }
+            } else {
+                val response = agent.execute(trimmed)
+                if ((_uiState.value.autoSpeak || speakResult) && response.isNotBlank()) {
+                    tts.speak(cleanMarkdownForSpeech(response))
+                }
             }
         }
     }

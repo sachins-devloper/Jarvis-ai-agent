@@ -197,4 +197,88 @@ class OpenAIEngine(
             "OpenAI Error ($code): $errorBody"
         }
     }
+
+    /**
+     * Performs multimodal image understanding using GPT-4o / GPT-4o-mini vision capabilities.
+     */
+    suspend fun analyzeImage(
+        prompt: String,
+        imageBase64: String,
+        mimeType: String = "image/jpeg",
+        temperature: Float = 0.4f,
+        maxTokens: Int = 1000
+    ): String = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) {
+            return@withContext "OpenAI API key is missing. Please set your API key in Settings to use vision analysis."
+        }
+
+        try {
+            val url = URL(API_URL)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Authorization", "Bearer $apiKey")
+                connectTimeout = 15000
+                readTimeout = 45000
+                doOutput = true
+            }
+
+            // Ensure a vision-capable model is used (gpt-4o or gpt-4o-mini)
+            val visionModel = if (model.contains("gpt-4")) model else "gpt-4o-mini"
+
+            val requestBody = JsonObject().apply {
+                addProperty("model", visionModel)
+                addProperty("temperature", temperature)
+                addProperty("max_tokens", maxTokens)
+
+                val contentArray = com.google.gson.JsonArray().apply {
+                    add(JsonObject().apply {
+                        addProperty("type", "text")
+                        addProperty("text", prompt.ifBlank { "Describe and explain what you see in this image in detail. Extract any visible text, key objects, and actionable information." })
+                    })
+                    add(JsonObject().apply {
+                        addProperty("type", "image_url")
+                        val imgUrl = JsonObject().apply {
+                            addProperty("url", "data:$mimeType;base64,$imageBase64")
+                            addProperty("detail", "auto")
+                        }
+                        add("image_url", imgUrl)
+                    })
+                }
+
+                val messagesArray = com.google.gson.JsonArray().apply {
+                    add(JsonObject().apply {
+                        addProperty("role", "user")
+                        add("content", contentArray)
+                    })
+                }
+                add("messages", messagesArray)
+            }
+
+            OutputStreamWriter(conn.outputStream).use { writer ->
+                writer.write(requestBody.toString())
+                writer.flush()
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode !in 200..299) {
+                val errorStream = conn.errorStream ?: conn.inputStream
+                val errorBody = errorStream.bufferedReader().use { it.readText() }
+                return@withContext parseErrorMessage(responseCode, errorBody)
+            }
+
+            val responseBody = conn.inputStream.bufferedReader().use { it.readText() }
+            val json = gson.fromJson(responseBody, JsonObject::class.java)
+            val choices = json.getAsJsonArray("choices")
+            if (choices != null && choices.size() > 0) {
+                val message = choices[0].asJsonObject.getAsJsonObject("message")
+                return@withContext message.get("content").asString.trim()
+            }
+
+            "No vision analysis response received from OpenAI."
+        } catch (e: Exception) {
+            Log.e(TAG, "OpenAI vision error", e)
+            "Error analyzing image: ${e.localizedMessage ?: e.message}"
+        }
+    }
 }

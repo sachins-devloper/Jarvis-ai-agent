@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Language
@@ -328,7 +329,22 @@ fun AboutFeaturesScreen(
                 )
             )
 
-            // 10. AI Reasoning & Local Engine
+            // 10. Multimodal Vision & Camera AI
+            FeatureDetailCard(
+                icon = Icons.Default.CameraAlt,
+                title = "Multimodal Vision & Camera AI",
+                toolNames = listOf("analyze_image", "Camera Snapshot", "Gallery Picker"),
+                description = "Snaps live camera photos or attaches gallery images for deep multimodal vision reasoning with GPT-4o / GPT-4o-mini. Understands diagrams, translates text, identifies objects, and solves visual queries.",
+                examples = listOf(
+                    "What is in this picture?",
+                    "Translate the text in this image to English",
+                    "Summarize this bill or receipt",
+                    "Explain this diagram",
+                    "What kind of plant / dog is this?"
+                )
+            )
+
+            // 11. AI Reasoning & Local Engine
             FeatureDetailCard(
                 icon = Icons.Default.Psychology,
                 title = "Dual AI Intelligence Architecture",
