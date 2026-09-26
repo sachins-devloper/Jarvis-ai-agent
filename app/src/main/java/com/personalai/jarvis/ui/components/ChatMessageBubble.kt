@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.painterResource
+import com.personalai.jarvis.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,10 +58,10 @@ fun ChatMessageBubble(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = "Jarvis",
+                    painter = painterResource(id = R.drawable.ic_ai_logo),
+                    contentDescription = "Jarvis AI",
                     tint = JarvisCyan,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -81,12 +83,21 @@ fun ChatMessageBubble(
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Column {
-                Text(
-                    text = message.text,
-                    color = TextPrimary,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
+                if (isUser) {
+                    Text(
+                        text = message.text,
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                } else {
+                    MarkdownText(
+                        markdown = message.text,
+                        textColor = TextPrimary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                }
             }
         }
 

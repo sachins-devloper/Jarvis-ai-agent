@@ -10,6 +10,7 @@ import com.personalai.jarvis.ai.ModelManager
 import com.personalai.jarvis.memory.ChatMessage
 import com.personalai.jarvis.services.JarvisAccessibilityService
 import com.personalai.jarvis.services.JarvisNotificationListenerService
+import com.personalai.jarvis.ui.components.cleanMarkdownForSpeech
 import com.personalai.jarvis.voice.VoiceState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -178,7 +179,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val response = agent.execute(trimmed)
             if (_uiState.value.autoSpeak && response.isNotBlank()) {
-                tts.speak(response)
+                tts.speak(cleanMarkdownForSpeech(response))
             }
         }
     }

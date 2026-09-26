@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -122,6 +123,15 @@ fun SettingsScreen(
 
     var showClearConfirmDialog by remember { mutableStateOf(false) }
     var toolsExpanded by remember { mutableStateOf(false) }
+    var showAboutFeatures by remember { mutableStateOf(false) }
+
+    if (showAboutFeatures) {
+        AboutFeaturesScreen(
+            onBack = { showAboutFeatures = false },
+            modifier = modifier
+        )
+        return
+    }
 
     // OpenAI state
     var apiKeyInput by remember(uiState.openAiKey) { mutableStateOf(uiState.openAiKey) }
@@ -554,11 +564,18 @@ fun SettingsScreen(
                 val hasCall = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
                 val hasContacts = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
                 val hasCallLog = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+                val hasStorage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+                } else {
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                }
 
                 PermissionItem(name = "Microphone (Voice)", isGranted = hasAudio)
                 PermissionItem(name = "Direct Phone Call", isGranted = hasCall)
                 PermissionItem(name = "Contacts Lookup", isGranted = hasContacts)
                 PermissionItem(name = "Call Log & Missed Calls", isGranted = hasCallLog)
+                PermissionItem(name = "Photos, Music & Media Storage", isGranted = hasStorage)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -673,14 +690,14 @@ fun SettingsScreen(
             }
 
             // ==========================================
-            // 6. ABOUT JARVIS
+            // 6. ABOUT JARVIS & FEATURES
             // ==========================================
-            SettingsSectionCard(title = "About Jarvis AI", icon = Icons.Default.Info) {
+            SettingsSectionCard(title = "About Jarvis & Feature Guide", icon = Icons.Default.Info) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(text = "Version", color = TextSecondary, fontSize = 12.sp)
+                    Text(text = "App Version", color = TextSecondary, fontSize = 12.sp)
                     Text(text = "1.0.0 (Neural Mobile)", color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -689,15 +706,30 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(text = "Architecture", color = TextSecondary, fontSize = 12.sp)
-                    Text(text = "Local-First Android Agent", color = JarvisCyan, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    Text(text = "Local-First Tool Agent", color = JarvisCyan, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = { showAboutFeatures = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan.copy(alpha = 0.15f)),
+                    border = BorderStroke(1.dp, JarvisCyan.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(text = "Device Specs & Diagnostics", color = TextSecondary, fontSize = 12.sp)
-                    Text(text = "Ask Jarvis: 'phone specs'", color = TextMuted, fontSize = 11.sp)
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = JarvisCyan,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "View App & Feature Guide",
+                        color = JarvisCyan,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 

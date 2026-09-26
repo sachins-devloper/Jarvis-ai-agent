@@ -73,6 +73,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import com.personalai.jarvis.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -84,7 +86,6 @@ import com.personalai.jarvis.agent.AgentEvent
 import com.personalai.jarvis.agent.ToolResult
 import com.personalai.jarvis.ui.components.ChatMessageBubble
 import com.personalai.jarvis.ui.components.GlowingMicButton
-import com.personalai.jarvis.ui.components.SystemStatusBar
 import com.personalai.jarvis.ui.components.ToolExecutionCard
 import com.personalai.jarvis.ui.theme.JarvisBackground
 import com.personalai.jarvis.ui.theme.JarvisBorder
@@ -181,10 +182,10 @@ fun JarvisScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.AutoAwesome,
+                            painter = painterResource(id = R.drawable.ic_ai_logo),
                             contentDescription = "Jarvis Logo",
                             tint = JarvisCyan,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
@@ -198,26 +199,37 @@ fun JarvisScreen(
                                 fontFamily = FontFamily.Monospace,
                                 letterSpacing = 2.sp
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            // Status Dot & Engine Indicator
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else JarvisCyan)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (uiState.isOpenAiEnabled) uiState.openAiModel.replace("gpt-", "").uppercase() else "ON-DEVICE",
-                                color = if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else JarvisCyan,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
-                            )
+                            if (uiState.isOpenAiEnabled) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF10A37F).copy(alpha = 0.16f))
+                                        .border(1.dp, Color(0xFF10A37F).copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                                        .clickable { showSettings = true }
+                                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10A37F))
+                                    )
+                                    Text(
+                                        text = "OpenAI",
+                                        color = Color(0xFF10A37F),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
                         }
                         Text(
-                            text = if (uiState.isOpenAiEnabled) "OpenAI cloud reasoning active" else "Autonomous Android Agent",
-                            color = TextSecondary,
+                            text = if (uiState.isOpenAiEnabled) "OpenAI Cloud • ${uiState.openAiModel}" else "Neural Personal Assistant",
+                            color = if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else TextSecondary,
                             fontSize = 11.sp
                         )
                     }
@@ -253,22 +265,7 @@ fun JarvisScreen(
                 }
             }
 
-            // 2. System Status Bar (Engine, Tools, Services)
-            SystemStatusBar(
-                engineName = uiState.engineName,
-                toolCount = uiState.toolCount,
-                isAccessibilityActive = uiState.isAccessibilityActive,
-                isNotificationListenerActive = uiState.isNotificationListenerActive,
-                onOpenAccessibility = {
-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                },
-                onOpenNotifications = {
-                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                },
-                onEngineClick = {
-                    showSettings = true
-                }
-            )
+            // 2. Conversation Stream & Tool Execution Cards with Scroll-to-Bottom Button
 
             // 3. Conversation Stream & Tool Execution Cards with Scroll-to-Bottom Button
             Box(
@@ -459,49 +456,7 @@ fun JarvisScreen(
                 }
             }
 
-            // 5. Dynamic or Default Suggestion Chips
-            val isDynamic = !uiState.dynamicSuggestions.isNullOrEmpty()
-            val chips = if (isDynamic) {
-                uiState.dynamicSuggestions
-            } else {
-                listOf(
-                    "Open YouTube",
-                    "Set alarm at 7:00 AM",
-                    "Turn on flashlight",
-                    "Battery status",
-                    "What is Python?"
-                )
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                chips.forEach { chip ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (isDynamic) JarvisCyan.copy(alpha = 0.2f) else JarvisSurfaceVariant)
-                            .border(1.dp, if (isDynamic) JarvisCyan else JarvisBorder, RoundedCornerShape(16.dp))
-                            .clickable {
-                                viewModel.submitQuery(chip)
-                            }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = chip,
-                            color = if (isDynamic) JarvisCyan else TextSecondary,
-                            fontSize = 12.sp,
-                            fontWeight = if (isDynamic) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            // 6. Bottom Input & Glowing Microphone / Send Bar
+            // Bottom Input & Glowing Microphone / Send Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

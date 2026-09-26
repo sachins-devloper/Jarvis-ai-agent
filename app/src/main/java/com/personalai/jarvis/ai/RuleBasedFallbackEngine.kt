@@ -218,6 +218,52 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
+        // 2.9 Local Device File / Media Search Intent (Images, Music, Video, Documents, Files)
+        val fileTypePattern = Regex("""\b(find|search|show|locate|list|get)\s+(?:all\s+)?(?:my\s+)?(files?|images?|imgs?|photos?|musics?|songs?|audio|videos?|movies?|documents?|docs?|pdfs?)(?:\s+(?:such\s+as|like|including|named|with|called|for|of|matching)\s+)?(.*)?$""", RegexOption.IGNORE_CASE)
+        val fileMatch = fileTypePattern.find(userText)
+
+        if (fileMatch != null || lower.startsWith("search file") || lower.startsWith("find file") || lower.startsWith("search img") || lower.startsWith("search photo") || lower.startsWith("search music") || lower.startsWith("search song") || lower.startsWith("search video")) {
+            val matchedTypeRaw = fileMatch?.groupValues?.get(2)?.lowercase() ?: ""
+            var searchKeyword = fileMatch?.groupValues?.get(3)?.trim() ?: ""
+
+            // Clean common phrases like "such as img, music, video"
+            if (searchKeyword.contains("such as", ignoreCase = true) || searchKeyword.contains("img, music", ignoreCase = true)) {
+                searchKeyword = ""
+            }
+
+            val resolvedType = when {
+                matchedTypeRaw.startsWith("img") || matchedTypeRaw.startsWith("image") || matchedTypeRaw.startsWith("photo") || lower.contains("image") || lower.contains("photo") || lower.contains("img") -> "image"
+                matchedTypeRaw.startsWith("music") || matchedTypeRaw.startsWith("song") || matchedTypeRaw.startsWith("audio") || lower.contains("music") || lower.contains("song") || lower.contains("audio") -> "audio"
+                matchedTypeRaw.startsWith("video") || matchedTypeRaw.startsWith("movie") || lower.contains("video") || lower.contains("movie") -> "video"
+                matchedTypeRaw.startsWith("doc") || matchedTypeRaw.startsWith("pdf") || lower.contains("document") || lower.contains("pdf") -> "document"
+                else -> "all"
+            }
+
+            if (searchKeyword.isBlank()) {
+                val clean = userText
+                    .replace(Regex("""^(?:search|find|show|locate|list|get)\s+""", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex("""(?:my\s+)?(?:files?|images?|imgs?|photos?|musics?|songs?|audio|videos?|documents?|docs?|pdfs?)\b""", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex("""^(?:named|with|for|called|matching|of|such as .*)\s*""", RegexOption.IGNORE_CASE), "")
+                    .trim()
+                if (clean.isNotBlank() && !clean.equals("all", ignoreCase = true) && !clean.equals("local", ignoreCase = true)) {
+                    searchKeyword = clean
+                }
+            }
+
+            return """
+            ```json
+            {
+              "tool": "search_files",
+              "arguments": {
+                "query": "$searchKeyword",
+                "type": "$resolvedType",
+                "limit": 10
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
         // 3. Search / Web Intent
         val searchRegex = Regex("""^(?:search|searh|google|browse|look up)(?:\s+for|:|\s+)?\s*(.*)""", RegexOption.IGNORE_CASE)
         val searchMatch = searchRegex.find(userText)
