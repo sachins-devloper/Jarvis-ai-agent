@@ -27,6 +27,7 @@ data class UiState(
     val engineName: String = "RuleBasedFallbackEngine",
     val toolCount: Int = 0,
     val downloadProgress: Map<String, Int> = emptyMap(),
+    val dynamicSuggestions: List<String> = emptyList(),
     val speechError: String? = null
 )
 
@@ -66,7 +67,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 _uiState.value = _uiState.value.copy(activeEvent = event)
                 if (event is AgentEvent.Completed) {
                     val updated = memoryRepo.getRecentMessages(30)
-                    _uiState.value = _uiState.value.copy(messages = updated)
+                    _uiState.value = _uiState.value.copy(
+                        messages = updated,
+                        dynamicSuggestions = event.suggestions
+                    )
                 }
             }
         }
@@ -116,7 +120,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         val trimmed = userText.trim()
         val tempUserMsg = ChatMessage(sender = "user", text = trimmed)
         val currentList = _uiState.value.messages.toMutableList().apply { add(tempUserMsg) }
-        _uiState.value = _uiState.value.copy(messages = currentList)
+        _uiState.value = _uiState.value.copy(
+            messages = currentList,
+            dynamicSuggestions = emptyList()
+        )
 
         viewModelScope.launch {
             val response = agent.execute(trimmed)

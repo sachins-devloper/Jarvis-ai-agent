@@ -311,6 +311,35 @@ fun JarvisScreen(
                     Column {
                         ChatMessageBubble(message = msg)
 
+                        // If this message has suggestions (e.g. disambiguation options for multiple contacts)
+                        if (!msg.suggestions.isNullOrEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                msg.suggestions.forEach { suggestion ->
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .background(JarvisCyan.copy(alpha = 0.15f))
+                                            .border(1.dp, JarvisCyan, RoundedCornerShape(16.dp))
+                                            .clickable { viewModel.submitQuery(suggestion) }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = suggestion,
+                                            color = JarvisCyan,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         // If this message executed a tool, render the ToolExecutionCard
                         if (msg.toolCall != null) {
                             Spacer(modifier = Modifier.height(4.dp))
@@ -336,15 +365,20 @@ fun JarvisScreen(
                 }
             }
 
-            // 5. Quick Suggestion Chips
-            val quickChips = listOf(
-                "Open YouTube",
-                "Set alarm at 7:00 AM",
-                "Turn on flashlight",
-                "Search Python DSA",
-                "Battery status",
-                "What is Python?"
-            )
+            // 5. Dynamic or Default Suggestion Chips
+            val isDynamic = !uiState.dynamicSuggestions.isNullOrEmpty()
+            val chips = if (isDynamic) {
+                uiState.dynamicSuggestions
+            } else {
+                listOf(
+                    "Open YouTube",
+                    "Set alarm at 7:00 AM",
+                    "Turn on flashlight",
+                    "Battery status",
+                    "What is Python?"
+                )
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -352,12 +386,12 @@ fun JarvisScreen(
                     .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                quickChips.forEach { chip ->
+                chips.forEach { chip ->
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
-                            .background(JarvisSurfaceVariant)
-                            .border(1.dp, JarvisBorder, RoundedCornerShape(16.dp))
+                            .background(if (isDynamic) JarvisCyan.copy(alpha = 0.2f) else JarvisSurfaceVariant)
+                            .border(1.dp, if (isDynamic) JarvisCyan else JarvisBorder, RoundedCornerShape(16.dp))
                             .clickable {
                                 viewModel.submitQuery(chip)
                             }
@@ -365,9 +399,9 @@ fun JarvisScreen(
                     ) {
                         Text(
                             text = chip,
-                            color = TextSecondary,
+                            color = if (isDynamic) JarvisCyan else TextSecondary,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = if (isDynamic) FontWeight.Bold else FontWeight.Medium
                         )
                     }
                 }

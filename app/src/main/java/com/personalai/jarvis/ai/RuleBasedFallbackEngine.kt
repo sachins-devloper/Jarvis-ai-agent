@@ -52,14 +52,74 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             return "I've handled that for you. $observation"
         }
 
+        // Check if there is recent conversation history indicating an active disambiguation prompt
+        val historyRegex = Regex("""jarvis:\s*(.*?Which one would you like to (call|message|send this message to|open|launch)\?)""", RegexOption.DOT_MATCHES_ALL)
+        val historyMatch = historyRegex.findAll(prompt).lastOrNull()
+        if (historyMatch != null) {
+            val lastAssistantMsg = historyMatch.groupValues[1]
+            val actionType = historyMatch.groupValues[2]
+
+            // Extract candidate numbered lines: e.g. "1. Arun Frnd (98765)"
+            val lineRegex = Regex("""(\d+)\.\s*([^(:\n]+?)(?:\s*\(.*?\))?$""", RegexOption.MULTILINE)
+            val candidates = lineRegex.findAll(lastAssistantMsg).map { it.groupValues[1].toInt() to it.groupValues[2].trim() }.toList()
+
+            var chosenCandidate: String? = null
+            val userChoiceNum = userText.toIntOrNull()
+            if (userChoiceNum != null) {
+                chosenCandidate = candidates.firstOrNull { it.first == userChoiceNum }?.second
+            } else {
+                chosenCandidate = candidates.firstOrNull {
+                    it.second.equals(userText, ignoreCase = true) || userText.contains(it.second, ignoreCase = true)
+                }?.second
+            }
+
+            if (chosenCandidate != null) {
+                if (actionType.contains("call")) {
+                    return """
+                    ```json
+                    {
+                      "tool": "make_call",
+                      "arguments": {
+                        "contact": "$chosenCandidate"
+                      }
+                    }
+                    ```
+                    """.trimIndent()
+                } else if (actionType.contains("message") || actionType.contains("send")) {
+                    return """
+                    ```json
+                    {
+                      "tool": "send_message",
+                      "arguments": {
+                        "recipient": "$chosenCandidate",
+                        "message": "Hello"
+                      }
+                    }
+                    ```
+                    """.trimIndent()
+                } else if (actionType.contains("open") || actionType.contains("launch")) {
+                    return """
+                    ```json
+                    {
+                      "tool": "open_app",
+                      "arguments": {
+                        "app_name": "$chosenCandidate"
+                      }
+                    }
+                    ```
+                    """.trimIndent()
+                }
+            }
+        }
+
         val lower = userText.lowercase()
 
         // 1. App Launching Intent
         val openAppPattern = Pattern.compile("""(?:open|launch|start|run)\s+(?:the\s+)?([a-zA-Z0-9\s]+?)(?:\s+app)?$""", Pattern.CASE_INSENSITIVE)
         val openAppMatcher = openAppPattern.matcher(userText)
         if (openAppMatcher.find()) {
-            val targetApp = openAppMatcher.group(1).trim()
-            if (!targetApp.equals("flashlight", ignoreCase = true) && !targetApp.equals("alarm", ignoreCase = true)) {
+            val targetApp = openAppMatcher.group(1)?.trim() ?: ""
+            if (targetApp.isNotBlank() && !targetApp.equals("flashlight", ignoreCase = true) && !targetApp.equals("alarm", ignoreCase = true)) {
                 return """
                 ```json
                 {
@@ -176,6 +236,19 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
+        if (lower.contains("battery") || lower.contains("charging") || lower.contains("power level")) {
+            return """
+            ```json
+            {
+              "tool": "device_control",
+              "arguments": {
+                "action": "battery_status"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
         // 5. Note / Memory
         if (lower.contains("note") || lower.contains("remember that") || lower.contains("remind me to")) {
             val noteContent = userText.replace(Regex("""^(?:take a note|add note|note|remember that|remind me to)[:\s]*""", RegexOption.IGNORE_CASE), "").trim()
@@ -247,24 +320,65 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
-        // 8. General Conversational / Knowledge Questions (Local offline answering)
+        // 8. General Knowledge & Conversational Q&A
         val isGreeting = Regex("""^(?:hello|hi|hey|good\s+morning|good\s+evening|good\s+afternoon)[\s!.,?]*$""", RegexOption.IGNORE_CASE).matches(lower)
 
-        return when {
-            lower.contains("what is python") ->
-                "Python is a high-level, general-purpose programming language known for its clear, readable syntax. It is widely used in data science, artificial intelligence, backend development, and automation."
+        // Built-in Knowledge Bank
+        when {
+            lower.contains("gravity") ->
+                return "Gravity is a fundamental natural force by which physical bodies attract each other with a force proportional to their masses. It gives weight to physical objects on Earth and causes the planets to orbit the Sun."
+
+            lower.contains("what is python") || (lower.contains("python") && lower.contains("language")) ->
+                return "Python is a high-level, general-purpose programming language known for its clear, readable syntax. It is widely used in data science, artificial intelligence, backend development, and automation."
+
+            lower.contains("photosynthesis") ->
+                return "Photosynthesis is the biological process by which green plants and certain organisms use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar (glucose)."
+
+            lower.contains("black hole") ->
+                return "A black hole is a region of spacetime where gravity is so intense that nothing—including light or other electromagnetic particles—has sufficient escape velocity to escape its event horizon."
+
+            lower.contains("dna") ->
+                return "DNA (Deoxyribonucleic acid) is a double-helix molecule carrying genetic instructions for the development, functioning, growth, and reproduction of all known organisms and viruses."
+
+            lower.contains("quantum computing") ->
+                return "Quantum computing uses quantum mechanics principles (superposition and entanglement) to perform calculations exponentially faster than classical supercomputers for specific complex problems."
+
+            lower.contains("artificial intelligence") || lower.contains("what is ai") ->
+                return "Artificial Intelligence (AI) is the simulation of human intelligence processes by computer systems, enabling machines to learn, reason, solve problems, and understand human language."
 
             lower.contains("who are you") || lower.contains("what are you") ->
-                "I am Jarvis, your personal local Android AI agent. I run completely on-device without relying on external cloud APIs, allowing me to execute phone tasks, manage tools, and converse securely."
+                return "I am Jarvis, your personal local Android AI agent. I run completely on-device without relying on external cloud APIs, allowing me to execute phone tasks, manage tools, and converse securely."
 
             lower.contains("what can you do") || lower.contains("help") ->
-                "I can launch applications, set alarms, make phone calls, send messages, search the web, control hardware (like flashlight and volume), take notes, and automate UI actions on your phone—all locally without the cloud."
+                return "I can launch applications, set alarms, make phone calls, send messages, search the web, check battery status, control hardware (like flashlight and volume), take notes, and automate UI actions on your phone."
 
             isGreeting ->
-                "Hello! Jarvis online and ready. What can I help you do on your phone today?"
+                return "Hello! Jarvis online and ready. What can I help you do on your phone today?"
 
-            else ->
-                "Understood. I am processing your request locally on your device. Let me know if you want me to launch an app, make a call, send a message, set an alarm, or search for information."
+            Regex("""^(?:thanks|thank you|thx)[\s!.,?]*$""", RegexOption.IGNORE_CASE).matches(lower) ->
+                return "You're welcome! Let me know if there's anything else you need."
+
+            Regex("""^(?:ok|okay|got it|sure|alright|cool|fine)[\s!.,?]*$""", RegexOption.IGNORE_CASE).matches(lower) ->
+                return "Ready whenever you are!"
+
+            Regex("""^(?:bye|goodbye|see you)[\s!.,?]*$""", RegexOption.IGNORE_CASE).matches(lower) ->
+                return "Goodbye! Call me anytime you need assistance."
         }
+
+        // 9. Autonomous Search for any query, question, or unknown search intent (e.g. "cheif minister vijay", "what is X")
+        if (userText.isNotBlank()) {
+            return """
+            ```json
+            {
+              "tool": "open_browser",
+              "arguments": {
+                "query": "$userText"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        return "I am ready. Ask me to launch an app, make a call, send a message, check battery, or search for any information."
     }
 }

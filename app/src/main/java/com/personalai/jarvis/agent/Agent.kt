@@ -16,7 +16,12 @@ sealed class AgentEvent {
     data class ToolExecuting(val toolName: String, val arguments: Map<String, Any>) : AgentEvent()
     data class ToolExecuted(val toolName: String, val result: ToolResult) : AgentEvent()
     data class TokenStream(val token: String) : AgentEvent()
-    data class Completed(val userPrompt: String, val finalResponse: String, val toolsExecuted: List<Pair<String, ToolResult>>) : AgentEvent()
+    data class Completed(
+        val userPrompt: String,
+        val finalResponse: String,
+        val toolsExecuted: List<Pair<String, ToolResult>>,
+        val suggestions: List<String> = emptyList()
+    ) : AgentEvent()
     data class Error(val error: String) : AgentEvent()
 }
 
@@ -46,6 +51,7 @@ class Agent(
             val intermediateSteps = mutableListOf<Pair<String, ToolResult>>()
             var currentIteration = 0
             var finalResponse = ""
+            var allSuggestions = mutableListOf<String>()
 
             while (currentIteration < MAX_TOOL_STEPS) {
                 currentIteration++
@@ -77,6 +83,17 @@ class Agent(
 
                     _events.emit(AgentEvent.ToolExecuted(toolName, result))
 
+                    // If tool requires user disambiguation or provided suggestions
+                    val toolSuggestions = (result.data?.get("suggestions") as? List<*>)?.filterIsInstance<String>()
+                    if (!toolSuggestions.isNullOrEmpty()) {
+                        allSuggestions.addAll(toolSuggestions)
+                    }
+
+                    if (result.data?.get("requires_disambiguation") == true) {
+                        finalResponse = result.output
+                        break
+                    }
+
                     // If tool succeeded and we already executed an action, allow LLM to formulate synthesis
                     // Next iteration in loop will feed observation to LLM
                 } else {
@@ -101,12 +118,13 @@ class Agent(
                 sender = "jarvis",
                 text = finalResponse,
                 toolCall = intermediateSteps.firstOrNull()?.first,
-                toolResult = intermediateSteps.firstOrNull()?.second?.output
+                toolResult = intermediateSteps.firstOrNull()?.second?.output,
+                suggestions = allSuggestions
             )
             memoryRepository.saveMessage(userChatMsg)
             memoryRepository.saveMessage(agentChatMsg)
 
-            _events.emit(AgentEvent.Completed(userMessage, finalResponse, intermediateSteps))
+            _events.emit(AgentEvent.Completed(userMessage, finalResponse, intermediateSteps, allSuggestions))
             finalResponse
         } catch (e: Exception) {
             Log.e(TAG, "Agent execution error", e)

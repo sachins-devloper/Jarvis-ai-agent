@@ -22,6 +22,7 @@ data class ChatMessage(
     val text: String,
     val toolCall: String? = null,
     val toolResult: String? = null,
+    val suggestions: List<String>? = emptyList(),
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -80,7 +81,9 @@ class MemoryRepository(context: Context) {
         val type = object : TypeToken<List<ChatMessage>>() {}.type
         try {
             val list: List<ChatMessage> = gson.fromJson(json, type) ?: emptyList()
-            list.takeLast(limit)
+            list.takeLast(limit).map {
+                it.copy(suggestions = it.suggestions ?: emptyList())
+            }
         } catch (e: Exception) {
             emptyList()
         }

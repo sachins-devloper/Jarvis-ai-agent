@@ -57,24 +57,46 @@ class OpenAppTool(private val context: Context) : AgentTool {
 
         // 1. Check known mapped packages
         val mappedPackage = commonPackageMap[queryLower]
+        var targetPackage: String? = null
 
-        // 2. Resolve target package by querying installed applications
-        var targetPackage: String? = mappedPackage
-
-        if (targetPackage == null || pm.getLaunchIntentForPackage(targetPackage) == null) {
-            val installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            // Exact label match
-            val exactMatch = installedApps.firstOrNull { appInfo ->
-                pm.getApplicationLabel(appInfo).toString().equals(appQuery, ignoreCase = true)
-            }
-            // Substring label match
-            val fuzzyMatch = exactMatch ?: installedApps.firstOrNull { appInfo ->
-                val label = pm.getApplicationLabel(appInfo).toString()
-                label.contains(appQuery, ignoreCase = true)
+        if (mappedPackage != null && pm.getLaunchIntentForPackage(mappedPackage) != null) {
+            targetPackage = mappedPackage
+        } else {
+            val launchableApps = pm.getInstalledApplications(PackageManager.GET_META_DATA).filter {
+                pm.getLaunchIntentForPackage(it.packageName) != null
             }
 
-            if (fuzzyMatch != null) {
-                targetPackage = fuzzyMatch.packageName
+            val exactMatches = launchableApps.filter {
+                pm.getApplicationLabel(it).toString().equals(appQuery, ignoreCase = true)
+            }
+
+            if (exactMatches.size == 1) {
+                targetPackage = exactMatches.first().packageName
+            } else {
+                val fuzzyMatches = launchableApps.filter {
+                    pm.getApplicationLabel(it).toString().contains(appQuery, ignoreCase = true)
+                }
+
+                if (fuzzyMatches.size > 1) {
+                    val formatted = fuzzyMatches.take(5).mapIndexed { i, app ->
+                        "${i + 1}. ${pm.getApplicationLabel(app)}"
+                    }.joinToString("\n")
+                    val promptMsg = "Found ${fuzzyMatches.size} apps matching '$appQuery':\n$formatted\n\nWhich one would you like to open?"
+                    val suggestions = fuzzyMatches.take(4).map { "Open ${pm.getApplicationLabel(it)}" }
+
+                    return@withContext ToolResult.success(
+                        output = promptMsg,
+                        data = mapOf(
+                            "requires_disambiguation" to true,
+                            "task_type" to "open_app",
+                            "query" to appQuery,
+                            "suggestions" to suggestions,
+                            "candidates" to fuzzyMatches.map { pm.getApplicationLabel(it).toString() }
+                        )
+                    )
+                } else if (fuzzyMatches.size == 1) {
+                    targetPackage = fuzzyMatches.first().packageName
+                }
             }
         }
 
