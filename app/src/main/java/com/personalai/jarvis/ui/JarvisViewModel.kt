@@ -14,6 +14,7 @@ import com.personalai.jarvis.services.JarvisNotificationListenerService
 import com.personalai.jarvis.ui.components.cleanMarkdownForSpeech
 import com.personalai.jarvis.utils.ImageHelper
 import com.personalai.jarvis.voice.VoiceState
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +39,11 @@ data class UiState(
     val speechError: String? = null,
     val autoSpeak: Boolean = true,
     val speechRate: Float = 1.05f,
-    val ttsPitch: Float = 0.95f
+    val ttsPitch: Float = 0.95f,
+    val localModelsOnDisk: List<File> = emptyList(),
+    val isGgufActive: Boolean = false,
+    val loadedModelFileName: String? = null,
+    val modelCheckStatusMessage: String? = null
 )
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
@@ -65,8 +70,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     init {
         // Load initial messages and check for local GGUF models
         viewModelScope.launch {
+            val localModels = localLLM.modelManager.getLocalModels()
             if (!localLLM.isOpenAiEnabled()) {
-                val localModels = localLLM.modelManager.getLocalModels()
                 if (localModels.isNotEmpty() && !localLLM.isUsingGGUF()) {
                     val modelFile = localModels.first()
                     localLLM.loadGGUFModel(modelFile)
@@ -78,7 +83,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
                 engineName = localLLM.getActiveEngineName(),
                 toolCount = app.toolRegistry.getAllTools().size,
                 isAccessibilityActive = JarvisAccessibilityService.isRunning(),
-                isNotificationListenerActive = JarvisNotificationListenerService.isRunning()
+                isNotificationListenerActive = JarvisNotificationListenerService.isRunning(),
+                localModelsOnDisk = localModels,
+                isGgufActive = localLLM.isUsingGGUF(),
+                loadedModelFileName = localLLM.ggufEngine.loadedModelFile?.name
             )
         }
 
@@ -279,4 +287,41 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             _uiState.value = _uiState.value.copy(messages = emptyList())
         }
     }
+
+    fun checkLocalModelIntegration(): String {
+        val models = localLLM.modelManager.getLocalModels()
+        val isLoaded = localLLM.isUsingGGUF()
+        val loadedFile = localLLM.ggufEngine.loadedModelFile
+        val loadedName = loadedFile?.name
+
+        val message = when {
+            isLoaded && loadedName != null -> "Integrated & Active: $loadedName"
+            models.isNotEmpty() -> "Found ${models.size} local model file(s) on device. Ready to load!"
+            else -> "Not Integrated: No .gguf model found in Downloads/ or app storage."
+        }
+
+        _uiState.value = _uiState.value.copy(
+            localModelsOnDisk = models,
+            isGgufActive = isLoaded,
+            loadedModelFileName = loadedName,
+            modelCheckStatusMessage = message,
+            engineName = localLLM.getActiveEngineName()
+        )
+        return message
+    }
+
+    fun loadLocalModel(file: File) {
+        viewModelScope.launch {
+            val result = localLLM.loadGGUFModel(file)
+            if (result.isSuccess) {
+                checkLocalModelIntegration()
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    modelCheckStatusMessage = "Failed to load ${file.name}: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
+                )
+            }
+        }
+    }
+
+    fun getPresetModels(): List<ModelInfo> = ModelManager.PRESET_MODELS
 }

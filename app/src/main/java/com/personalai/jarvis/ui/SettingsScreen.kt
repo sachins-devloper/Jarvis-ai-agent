@@ -40,9 +40,11 @@ import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
@@ -53,6 +55,7 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
@@ -60,9 +63,12 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import com.personalai.jarvis.ai.ModelInfo
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -72,6 +78,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -404,7 +411,381 @@ fun SettingsScreen(
             }
 
             // ==========================================
-            // 2. AUDIO & VOICE CONTROLS
+            // 2. LOCAL LLM INTEGRATION & DOWNLOADS
+            // ==========================================
+            SettingsSectionCard(title = "Local LLM Integration", icon = Icons.Default.Bolt) {
+                val presetModels = remember { viewModel.getPresetModels() }
+                var showModelDownloads by remember { mutableStateOf(false) }
+
+                val isGgufActive = uiState.isGgufActive
+                val hasLocalFiles = uiState.localModelsOnDisk.isNotEmpty()
+                val activeModelName = uiState.loadedModelFileName
+
+                // Integration Status Banner
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            when {
+                                isGgufActive -> JarvisGreen.copy(alpha = 0.12f)
+                                hasLocalFiles -> JarvisCyan.copy(alpha = 0.12f)
+                                else -> JarvisOrange.copy(alpha = 0.12f)
+                            }
+                        )
+                        .border(
+                            1.dp,
+                            when {
+                                isGgufActive -> JarvisGreen.copy(alpha = 0.5f)
+                                hasLocalFiles -> JarvisCyan.copy(alpha = 0.5f)
+                                else -> JarvisOrange.copy(alpha = 0.5f)
+                            },
+                            RoundedCornerShape(10.dp)
+                        )
+                        .padding(14.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = when {
+                                    isGgufActive -> Icons.Default.CheckCircle
+                                    hasLocalFiles -> Icons.Default.Info
+                                    else -> Icons.Default.Warning
+                                },
+                                contentDescription = null,
+                                tint = when {
+                                    isGgufActive -> JarvisGreen
+                                    hasLocalFiles -> JarvisCyan
+                                    else -> JarvisOrange
+                                },
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = when {
+                                    isGgufActive -> "Model Integrated & Active"
+                                    hasLocalFiles -> "Model Detected on Storage"
+                                    else -> "No Local Model Integrated"
+                                },
+                                color = when {
+                                    isGgufActive -> JarvisGreen
+                                    hasLocalFiles -> JarvisCyan
+                                    else -> JarvisOrange
+                                },
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Text(
+                            text = when {
+                                isGgufActive && activeModelName != null ->
+                                    "Active: $activeModelName\nRunning on native ARM64 llama.cpp engine."
+                                hasLocalFiles ->
+                                    "${uiState.localModelsOnDisk.size} .gguf model file(s) found on device storage. Tap 'Load' below to activate."
+                                else ->
+                                    "Rule-Based Fallback Engine active. Download a GGUF model below for full offline neural generation."
+                            },
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp
+                        )
+
+                        if (!uiState.modelCheckStatusMessage.isNullOrBlank()) {
+                            Text(
+                                text = uiState.modelCheckStatusMessage ?: "",
+                                color = JarvisCyan,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Check Integration Button
+                Button(
+                    onClick = { viewModel.checkLocalModelIntegration() },
+                    colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan.copy(alpha = 0.18f)),
+                    border = BorderStroke(1.dp, JarvisCyan.copy(alpha = 0.6f)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Check",
+                        tint = JarvisCyan,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Check Model Integration",
+                        color = JarvisCyan,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // If models found on disk, list them with a Load button
+                if (uiState.localModelsOnDisk.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Models on Device (${uiState.localModelsOnDisk.size})",
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        uiState.localModelsOnDisk.forEach { file ->
+                            val isCurrentlyLoaded = uiState.isGgufActive && uiState.loadedModelFileName == file.name
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = JarvisSurfaceVariant,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isCurrentlyLoaded) JarvisGreen else JarvisBorder
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = file.name,
+                                            color = if (isCurrentlyLoaded) JarvisGreen else TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            fontFamily = FontFamily.Monospace,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = "${formatSize(file.length())} • ${file.parentFile?.name ?: "storage"}",
+                                            color = TextMuted,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+
+                                    if (isCurrentlyLoaded) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(JarvisGreen.copy(alpha = 0.2f))
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = "ACTIVE",
+                                                color = JarvisGreen,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    } else {
+                                        OutlinedButton(
+                                            onClick = { viewModel.loadLocalModel(file) },
+                                            border = BorderStroke(1.dp, JarvisCyan.copy(alpha = 0.5f)),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "Load",
+                                                color = JarvisCyan,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Recommended Models Download Section
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(JarvisSurfaceVariant.copy(alpha = 0.5f))
+                        .clickable { showModelDownloads = !showModelDownloads }
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Download Recommended Models",
+                            color = JarvisCyan,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Pre-quantized GGUF models for mobile ARM64",
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Icon(
+                        imageVector = if (showModelDownloads) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = JarvisCyan
+                    )
+                }
+
+                AnimatedVisibility(visible = showModelDownloads) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        presetModels.forEach { model ->
+                            val progress = uiState.downloadProgress[model.id]
+                            val isDownloaded = uiState.localModelsOnDisk.any { it.name.equals(model.filename, ignoreCase = true) }
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = JarvisSurfaceVariant,
+                                border = BorderStroke(1.dp, JarvisBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = model.name,
+                                            color = TextPrimary,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = formatSize(model.sizeBytes),
+                                            color = JarvisCyan,
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = model.description,
+                                        color = TextSecondary,
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    if (progress != null && progress in 1..99) {
+                                        Column {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(text = "Downloading...", color = JarvisCyan, fontSize = 11.sp)
+                                                Text(text = "$progress%", color = JarvisCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            LinearProgressIndicator(
+                                                progress = { progress / 100f },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(4.dp)
+                                                    .clip(RoundedCornerShape(2.dp)),
+                                                color = JarvisCyan,
+                                                trackColor = JarvisSurface
+                                            )
+                                        }
+                                    } else {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            // Direct Browser Download Link Button
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(model.downloadUrl))
+                                                    context.startActivity(browserIntent)
+                                                },
+                                                border = BorderStroke(1.dp, JarvisCyan.copy(alpha = 0.5f)),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Download,
+                                                    contentDescription = "Download link",
+                                                    tint = JarvisCyan,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "Download",
+                                                    color = JarvisCyan,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+
+                                            // In-app direct download
+                                            Button(
+                                                onClick = { viewModel.downloadAndLoadModel(model) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = JarvisCyan),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Text(
+                                                    text = if (isDownloaded) "Re-download" else "In-App Get",
+                                                    color = Color.Black,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Storage tip
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = JarvisBackground,
+                            border = BorderStroke(1.dp, JarvisBorder.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "💡 Manual Placement Tip:",
+                                    color = JarvisCyan,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Files saved in your phone's 'Download' or 'Download/models' folder are automatically detected. After downloading via your browser, tap 'Check Model Integration' above.",
+                                    color = TextMuted,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ==========================================
+            // 3. AUDIO & VOICE CONTROLS
             // ==========================================
             SettingsSectionCard(title = "Audio & Voice Controls", icon = Icons.Default.VolumeUp) {
                 // Auto-Speak Switch
@@ -532,7 +913,7 @@ fun SettingsScreen(
             }
 
             // ==========================================
-            // 3. SYSTEM SERVICES & PERMISSIONS
+            // 4. SYSTEM SERVICES & PERMISSIONS
             // ==========================================
             SettingsSectionCard(title = "System Services & Permissions", icon = Icons.Default.Security) {
                 // Accessibility Service
@@ -608,7 +989,7 @@ fun SettingsScreen(
             }
 
             // ==========================================
-            // 4. ACTIVE AGENT TOOLS
+            // 5. ACTIVE AGENT TOOLS
             // ==========================================
             val tools = remember { viewModel.getAllTools() }
             SettingsSectionCard(title = "Registered Agent Tools (${tools.size})", icon = Icons.Default.Tune) {
@@ -647,7 +1028,7 @@ fun SettingsScreen(
             }
 
             // ==========================================
-            // 5. DATA MANAGEMENT & CLEAR HISTORY
+            // 6. DATA MANAGEMENT & CLEAR HISTORY
             // ==========================================
             SettingsSectionCard(title = "Data & Conversation History", icon = Icons.Default.Storage) {
                 Row(
@@ -692,7 +1073,7 @@ fun SettingsScreen(
             }
 
             // ==========================================
-            // 6. ABOUT JARVIS & FEATURES
+            // 7. ABOUT JARVIS & FEATURES
             // ==========================================
             SettingsSectionCard(title = "About Jarvis & Feature Guide", icon = Icons.Default.Info) {
                 Row(
@@ -950,4 +1331,14 @@ private fun ToolItemRow(tool: AgentTool) {
             fontSize = 11.sp
         )
     }
+}
+
+private fun formatSize(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return String.format("%.1f KB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024) return String.format("%.1f MB", mb)
+    val gb = mb / 1024.0
+    return String.format("%.2f GB", gb)
 }
