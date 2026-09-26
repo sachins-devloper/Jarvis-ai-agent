@@ -1,0 +1,231 @@
+package com.personalai.jarvis.ai
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import java.io.File
+import java.util.regex.Pattern
+
+/**
+ * Built-in zero-dependency local rule and intent engine.
+ * Ensures the agent is fully interactive immediately out of the box,
+ * even before downloading a large GGUF model file.
+ */
+class RuleBasedFallbackEngine : LocalLLMEngine {
+    override val name: String = "Jarvis Zero-Shot Fallback Engine"
+    override val isLoaded: Boolean = true
+    override val loadedModelFile: File? = null
+
+    override suspend fun loadModel(modelFile: File): Result<Unit> = Result.success(Unit)
+    override suspend fun unloadModel() {}
+
+    override fun generate(
+        prompt: String,
+        temperature: Float,
+        maxTokens: Int,
+        stopTokens: List<String>
+    ): Flow<String> = flow {
+        val result = generateComplete(prompt, temperature, maxTokens)
+        // Stream token chunks for realistic animation
+        val words = result.split(" ")
+        for (i in words.indices) {
+            val chunk = if (i == words.size - 1) words[i] else words[i] + " "
+            emit(chunk)
+            kotlinx.coroutines.delay(25)
+        }
+    }
+
+    override suspend fun generateComplete(
+        prompt: String,
+        temperature: Float,
+        maxTokens: Int
+    ): String {
+        // Extract the user request from the structured prompt
+        val userReqRegex = Regex("""User Request:\s*(.*)""", RegexOption.IGNORE_CASE)
+        val match = userReqRegex.find(prompt)
+        val userText = (match?.groupValues?.get(1) ?: prompt).trim()
+
+        // Check if this is an observation turn from a previous tool execution
+        if (prompt.contains("Observation:")) {
+            val obsRegex = Regex("""Observation:\s*(.*)""")
+            val obsMatch = obsRegex.findAll(prompt).lastOrNull()
+            val observation = obsMatch?.groupValues?.get(1) ?: "Operation completed."
+            return "I've handled that for you. $observation"
+        }
+
+        val lower = userText.lowercase()
+
+        // 1. App Launching Intent
+        val openAppPattern = Pattern.compile("""(?:open|launch|start|run)\s+(?:the\s+)?([a-zA-Z0-9\s]+?)(?:\s+app)?$""", Pattern.CASE_INSENSITIVE)
+        val openAppMatcher = openAppPattern.matcher(userText)
+        if (openAppMatcher.find()) {
+            val targetApp = openAppMatcher.group(1).trim()
+            if (!targetApp.equals("flashlight", ignoreCase = true) && !targetApp.equals("alarm", ignoreCase = true)) {
+                return """
+                ```json
+                {
+                  "tool": "open_app",
+                  "arguments": {
+                    "app_name": "$targetApp"
+                  }
+                }
+                ```
+                """.trimIndent()
+            }
+        }
+
+        // 2. Alarm Intent
+        if (lower.contains("alarm")) {
+            var hour = 7
+            var minute = 0
+            val timeRegex = Regex("""(\d{1,2})(?::(\d{2}))?\s*(am|pm)?""", RegexOption.IGNORE_CASE)
+            val timeMatch = timeRegex.find(userText)
+            if (timeMatch != null) {
+                val rawH = timeMatch.groupValues[1].toIntOrNull() ?: 7
+                val rawM = timeMatch.groupValues[2].toIntOrNull() ?: 0
+                val ampm = timeMatch.groupValues[3].lowercase()
+
+                hour = when {
+                    ampm == "pm" && rawH < 12 -> rawH + 12
+                    ampm == "am" && rawH == 12 -> 0
+                    else -> rawH
+                }
+                minute = rawM
+            }
+            return """
+            ```json
+            {
+              "tool": "set_alarm",
+              "arguments": {
+                "hour": $hour,
+                "minute": $minute,
+                "message": "Jarvis Alarm"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        // 3. Search / Web Intent
+        val searchRegex = Regex("""(?:search|google|browse|look up)\s+(?:for\s+)?(.*)""", RegexOption.IGNORE_CASE)
+        val searchMatch = searchRegex.find(userText)
+        if (searchMatch != null) {
+            val query = searchMatch.groupValues[1].trim()
+            return """
+            ```json
+            {
+              "tool": "open_browser",
+              "arguments": {
+                "query": "$query"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.endsWith(".com")) {
+            return """
+            ```json
+            {
+              "tool": "open_browser",
+              "arguments": {
+                "url": "$userText"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        // 4. Device Controls (Flashlight, Volume, Settings)
+        if (lower.contains("flashlight") || lower.contains("torch")) {
+            val action = if (lower.contains("off")) "flashlight_off" else "flashlight_on"
+            return """
+            ```json
+            {
+              "tool": "device_control",
+              "arguments": {
+                "action": "$action"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        if (lower.contains("volume")) {
+            val action = if (lower.contains("up") || lower.contains("increase")) "volume_up" else "volume_down"
+            return """
+            ```json
+            {
+              "tool": "device_control",
+              "arguments": {
+                "action": "$action"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        if (lower.contains("wifi") || lower.contains("wi-fi")) {
+            return """
+            ```json
+            {
+              "tool": "device_control",
+              "arguments": {
+                "action": "open_wifi_settings"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        // 5. Note / Memory
+        if (lower.contains("note") || lower.contains("remember that") || lower.contains("remind me to")) {
+            val noteContent = userText.replace(Regex("""^(?:take a note|add note|note|remember that|remind me to)[:\s]*""", RegexOption.IGNORE_CASE), "").trim()
+            return """
+            ```json
+            {
+              "tool": "create_note",
+              "arguments": {
+                "content": "$noteContent"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        // 6. Messaging
+        if (lower.contains("send message") || lower.contains("text ") || lower.contains("whatsapp")) {
+            val msgRegex = Regex("""(?:message|text|whatsapp)\s+([a-zA-Z0-9\s]+?)\s+(?:saying|that|with message)?\s*[:,-]?\s*(.*)""", RegexOption.IGNORE_CASE)
+            val mMatch = msgRegex.find(userText)
+            val recipient = mMatch?.groupValues?.get(1)?.trim() ?: "Contact"
+            val message = mMatch?.groupValues?.get(2)?.trim() ?: userText
+            return """
+            ```json
+            {
+              "tool": "send_message",
+              "arguments": {
+                "recipient": "$recipient",
+                "message": "$message"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
+        // 7. General Conversational / Knowledge Questions (Local offline answering)
+        return when {
+            lower.contains("what is python") ->
+                "Python is a high-level, general-purpose programming language known for its clear, readable syntax. It is widely used in data science, artificial intelligence, backend development, and automation."
+
+            lower.contains("who are you") || lower.contains("what are you") ->
+                "I am Jarvis, your personal local Android AI agent. I run completely on-device without relying on external cloud APIs, allowing me to execute phone tasks, manage tools, and converse securely."
+
+            lower.contains("what can you do") || lower.contains("help") ->
+                "I can launch applications, set alarms, search the web, control device settings (like flashlight and volume), take notes, draft messages, and automate UI actions on your phone—all locally without the cloud."
+
+            lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ->
+                "Hello! Jarvis online and ready. What can I help you do on your phone today?"
+
+            else ->
+                "Understood. I am processing your request locally on your device. Let me know if you want me to launch an app, set an alarm, take a note, or search for information."
+        }
+    }
+}

@@ -1,0 +1,44 @@
+# Built application packages & artifacts
+*.apk
+*.ap_
+*.aab
+build/
+*/build/
+
+# Gradle files & cache
+.gradle/
+buildOutputCleanup/
+gradle.properties.bak
+
+# Machine-specific SDK configuration (contains local SDK paths)
+local.properties
+
+# Android Studio & IntelliJ IDEA
+.idea/
+*.iml
+.idea/libraries
+.idea/caches
+.idea/modules.xml
+.idea/workspace.xml
+
+# Visual Studio Code
+.vscode/
+
+# Native C++ / CMake build outputs
+.cxx/
+default/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Large Local AI model weights (GGUF, ONNX, Binaries)
+*.gguf
+*.bin
+*.onnx
+model/*.gguf
+!model/README.md
+
+# Log files and test screencaps
+*.log
+jarvis_app_screen.png

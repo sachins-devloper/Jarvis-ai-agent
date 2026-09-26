@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Jarvis AI</string>
+    <string name="accessibility_service_description">Jarvis AI agent assistant to automate on-screen tasks and interact with applications on your behalf.</string>
+</resources>
