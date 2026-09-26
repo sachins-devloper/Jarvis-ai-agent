@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VolumeUp
 import com.personalai.jarvis.ui.components.OpenAiKeyDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -106,6 +107,16 @@ fun JarvisScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
+    var showSettings by remember { mutableStateOf(false) }
+
+    if (showSettings) {
+        SettingsScreen(
+            viewModel = viewModel,
+            onBack = { showSettings = false },
+            modifier = modifier
+        )
+        return
+    }
 
     val showScrollToBottom by remember {
         derivedStateOf {
@@ -152,7 +163,7 @@ fun JarvisScreen(
                 .navigationBarsPadding()
                 .imePadding()
         ) {
-            // 1. Top Header Bar
+            // 1. Top Header Bar (Clean, Minimal, Modern)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -163,7 +174,7 @@ fun JarvisScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
                             .background(JarvisCyan.copy(alpha = 0.15f))
                             .border(1.dp, JarvisCyan.copy(alpha = 0.4f), CircleShape),
@@ -188,42 +199,24 @@ fun JarvisScreen(
                                 letterSpacing = 2.sp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            // Interactive Engine Mode Toggle Pill
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
+                            // Status Dot & Engine Indicator
+                            Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        if (uiState.isOpenAiEnabled) Color(0xFF10A37F).copy(alpha = 0.2f)
-                                        else JarvisCyan.copy(alpha = 0.2f)
-                                    )
-                                    .border(
-                                        1.dp,
-                                        if (uiState.isOpenAiEnabled) Color(0xFF10A37F).copy(alpha = 0.6f)
-                                        else JarvisCyan.copy(alpha = 0.4f),
-                                        RoundedCornerShape(12.dp)
-                                    )
-                                    .clickable { viewModel.toggleOpenAi(!uiState.isOpenAiEnabled) }
-                                    .padding(horizontal = 7.dp, vertical = 3.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (uiState.isOpenAiEnabled) Icons.Default.CloudQueue else Icons.Default.Bolt,
-                                    contentDescription = "Toggle AI Engine",
-                                    tint = if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else JarvisCyan,
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (uiState.isOpenAiEnabled) uiState.openAiModel else "LOCAL AI",
-                                    color = if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else JarvisCyan,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else JarvisCyan)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (uiState.isOpenAiEnabled) uiState.openAiModel.replace("gpt-", "").uppercase() else "ON-DEVICE",
+                                color = if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else JarvisCyan,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
                         }
                         Text(
-                            text = if (uiState.isOpenAiEnabled) "OpenAI cloud reasoning active" else "autonomous Android Agent",
+                            text = if (uiState.isOpenAiEnabled) "OpenAI cloud reasoning active" else "Autonomous Android Agent",
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
@@ -231,29 +224,30 @@ fun JarvisScreen(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // OpenAI Config Key Icon
-                    IconButton(onClick = { viewModel.openApiKeyDialog() }) {
-                        Icon(
-                            imageVector = Icons.Default.Key,
-                            contentDescription = "OpenAI Config",
-                            tint = if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else TextMuted,
-                            modifier = Modifier.size(19.dp)
-                        )
-                    }
                     if (uiState.isSpeaking) {
                         IconButton(onClick = { viewModel.stopSpeaking() }) {
                             Icon(
                                 imageVector = Icons.Default.VolumeUp,
                                 contentDescription = "Mute",
-                                tint = JarvisCyan
+                                tint = JarvisCyan,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
-                    IconButton(onClick = { viewModel.clearHistory() }) {
+                    // Clean Settings Gear Button
+                    IconButton(
+                        onClick = { showSettings = true },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(JarvisSurface)
+                            .border(1.dp, JarvisBorder, CircleShape)
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.DeleteOutline,
-                            contentDescription = "Clear History",
-                            tint = TextMuted
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = JarvisCyan,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
                 }
@@ -265,18 +259,14 @@ fun JarvisScreen(
                 toolCount = uiState.toolCount,
                 isAccessibilityActive = uiState.isAccessibilityActive,
                 isNotificationListenerActive = uiState.isNotificationListenerActive,
-                isVoiceWakeActive = uiState.isVoiceWakeActive,
                 onOpenAccessibility = {
                     context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 },
                 onOpenNotifications = {
                     context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 },
-                onToggleVoiceWake = {
-                    viewModel.toggleVoiceWake()
-                },
                 onEngineClick = {
-                    viewModel.openApiKeyDialog()
+                    showSettings = true
                 }
             )
 

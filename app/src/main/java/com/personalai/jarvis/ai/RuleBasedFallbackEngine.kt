@@ -48,10 +48,11 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
 
         // Check if this is an observation turn from a previous tool execution
         if (prompt.contains("Observation:")) {
-            val obsRegex = Regex("""Observation:\s*(.*)""")
-            val obsMatch = obsRegex.findAll(prompt).lastOrNull()
-            val observation = obsMatch?.groupValues?.get(1) ?: "Operation completed."
-            return "I've handled that for you. $observation"
+            val obsRegex = Regex("""Observation:\s*([\s\S]*?)(?:\s*\(Success:|\n\nBased on|$)""")
+            val obsMatch = obsRegex.find(prompt)
+            val observation = obsMatch?.groupValues?.get(1)?.trim()
+                ?: prompt.substringAfter("Observation:").substringBefore("(Success:").trim()
+            return if (observation.isNotBlank()) observation else "Operation completed."
         }
 
         // Check if there is recent conversation history indicating an active disambiguation prompt
@@ -344,6 +345,37 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
+        // 4.1 Device Info / Specs / About Intent (e.g. "what is my mobile device about", "phone specs")
+        if (lower.contains("mobile device about") || lower.contains("about my mobile") || lower.contains("about my phone") ||
+            lower.contains("about device") || lower.contains("about phone") || lower.contains("device info") ||
+            lower.contains("phone info") || lower.contains("phone specs") || lower.contains("device specs") ||
+            lower.contains("mobile specs") || lower.contains("what is my mobile") || lower.contains("what is my device") ||
+            lower.contains("what phone is this") || lower.contains("phone details") || lower.contains("device details") ||
+            lower.contains("system info") || lower.contains("ram status") || lower.contains("how much ram") ||
+            lower.contains("ram usage") || lower.contains("android version") || lower.contains("os version") ||
+            lower.contains("specs of my phone") || lower.contains("specs of this phone") ||
+            (lower.contains("device") && lower.contains("about")) || (lower.contains("phone") && lower.contains("about"))
+        ) {
+            val category = when {
+                lower.contains("ram") || lower.contains("memory") -> "ram"
+                lower.contains("battery") -> "battery"
+                lower.contains("storage") -> "storage"
+                lower.contains("network") || lower.contains("wifi") -> "network"
+                lower.contains("hardware") -> "specs"
+                else -> "all"
+            }
+            return """
+            ```json
+            {
+              "tool": "get_device_info",
+              "arguments": {
+                "category": "$category"
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
         // 5. Note / Memory
         if (lower.contains("note") || lower.contains("remember that") || lower.contains("remind me to")) {
             val noteContent = userText.replace(Regex("""^(?:take a note|add note|note|remember that|remind me to)[:\s]*""", RegexOption.IGNORE_CASE), "").trim()
@@ -359,21 +391,48 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
             """.trimIndent()
         }
 
+        // 5.1 Call Logs & Missed Calls Intent (e.g. "any missed calls", "who called me", "call history")
+        if (lower.contains("missed call") || lower.contains("missed calls") || lower.contains("who called") ||
+            lower.contains("any missed") || lower.contains("call log") || lower.contains("call logs") ||
+            lower.contains("call history") || lower.contains("recent calls") || lower.contains("incoming calls") ||
+            lower.contains("outgoing calls") || lower.contains("did anyone call") || lower.contains("did i miss any call")
+        ) {
+            val callType = when {
+                lower.contains("incoming") -> "incoming"
+                lower.contains("outgoing") -> "outgoing"
+                lower.contains("all") || lower.contains("history") || lower.contains("log") -> "all"
+                else -> "missed"
+            }
+            return """
+            ```json
+            {
+              "tool": "get_call_log",
+              "arguments": {
+                "type": "$callType",
+                "limit": 5
+              }
+            }
+            ```
+            """.trimIndent()
+        }
+
         // 6. Calling Intent (e.g. "call Mom", "dial 9876543210", "make a call to John")
         val callPattern = Regex("""^(?:call|dial|phone|make a call to)\s+([a-zA-Z0-9\s+]+)$""", RegexOption.IGNORE_CASE)
         val callMatch = callPattern.find(userText.trim())
         if (callMatch != null) {
             val contact = callMatch.groupValues[1].trim()
-            return """
-            ```json
-            {
-              "tool": "make_call",
-              "arguments": {
-                "contact": "$contact"
-              }
+            if (!contact.equals("log", ignoreCase = true) && !contact.equals("logs", ignoreCase = true) && !contact.equals("history", ignoreCase = true)) {
+                return """
+                ```json
+                {
+                  "tool": "make_call",
+                  "arguments": {
+                    "contact": "$contact"
+                  }
+                }
+                ```
+                """.trimIndent()
             }
-            ```
-            """.trimIndent()
         }
 
         // 7. Messaging Intent (SMS / WhatsApp)

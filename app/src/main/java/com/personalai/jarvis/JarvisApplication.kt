@@ -5,9 +5,11 @@ import com.personalai.jarvis.agent.Agent
 import com.personalai.jarvis.agent.ToolRegistry
 import com.personalai.jarvis.ai.LocalLLM
 import com.personalai.jarvis.memory.MemoryRepository
+import com.personalai.jarvis.tools.CallLogTool
 import com.personalai.jarvis.tools.CallTool
 import com.personalai.jarvis.tools.ContactTool
 import com.personalai.jarvis.tools.CreateNoteTool
+import com.personalai.jarvis.tools.DeviceInfoTool
 import com.personalai.jarvis.tools.DeviceControlTool
 import com.personalai.jarvis.tools.NotificationTool
 import com.personalai.jarvis.tools.OpenAppTool
@@ -57,6 +59,8 @@ class JarvisApplication : Application() {
             register(UiInteractionTool(this@JarvisApplication))
             register(CallTool(this@JarvisApplication))
             register(ContactTool(this@JarvisApplication))
+            register(CallLogTool(this@JarvisApplication))
+            register(DeviceInfoTool(this@JarvisApplication))
             register(CreateNoteTool(memoryRepository))
             register(YouTubeTool(this@JarvisApplication))
         }

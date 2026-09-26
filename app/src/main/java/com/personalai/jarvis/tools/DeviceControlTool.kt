@@ -124,8 +124,12 @@ class DeviceControlTool(private val context: Context) : AgentTool {
                     }
                 }
 
+                "device_info", "device_specs", "about", "phone_info", "specs" -> {
+                    DeviceInfoTool(context).execute(emptyMap())
+                }
+
                 else -> {
-                    ToolResult.error("Unknown action '$action'. Available: flashlight_on, flashlight_off, volume_up, volume_down, battery_status, storage_status, list_installed_apps, take_screenshot, open_wifi_settings.")
+                    ToolResult.error("Unknown action '$action'. Available: flashlight_on, flashlight_off, volume_up, volume_down, battery_status, storage_status, device_info, list_installed_apps, take_screenshot, open_wifi_settings.")
                 }
             }
         } catch (e: Exception) {

@@ -32,7 +32,10 @@ data class UiState(
     val toolCount: Int = 0,
     val downloadProgress: Map<String, Int> = emptyMap(),
     val dynamicSuggestions: List<String> = emptyList(),
-    val speechError: String? = null
+    val speechError: String? = null,
+    val autoSpeak: Boolean = true,
+    val speechRate: Float = 1.05f,
+    val ttsPitch: Float = 0.95f
 )
 
 class JarvisViewModel(application: Application) : AndroidViewModel(application) {
@@ -48,7 +51,10 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         UiState(
             isOpenAiEnabled = localLLM.isOpenAiEnabled(),
             openAiKey = localLLM.getOpenAiKey(),
-            openAiModel = localLLM.getOpenAiModel()
+            openAiModel = localLLM.getOpenAiModel(),
+            autoSpeak = tts.autoSpeak,
+            speechRate = tts.speechRate,
+            ttsPitch = tts.pitch
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -171,7 +177,7 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             val response = agent.execute(trimmed)
-            if (speakResult && response.isNotBlank()) {
+            if (_uiState.value.autoSpeak && response.isNotBlank()) {
                 tts.speak(response)
             }
         }
@@ -190,6 +196,29 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     fun stopSpeaking() {
         tts.stop()
     }
+
+    fun setAutoSpeak(enabled: Boolean) {
+        tts.setAutoSpeak(enabled)
+        _uiState.value = _uiState.value.copy(autoSpeak = enabled)
+    }
+
+    fun setSpeechRate(rate: Float) {
+        tts.setSpeechRate(rate)
+        _uiState.value = _uiState.value.copy(speechRate = rate)
+    }
+
+    fun setTtsPitch(pitch: Float) {
+        tts.setPitch(pitch)
+        _uiState.value = _uiState.value.copy(ttsPitch = pitch)
+    }
+
+    fun testVoice() {
+        tts.testVoice()
+    }
+
+    fun getAllTools() = app.toolRegistry.getAllTools()
+
+    fun getLocalModels() = localLLM.modelManager.getLocalModels()
 
     fun downloadAndLoadModel(modelInfo: ModelInfo) {
         viewModelScope.launch {

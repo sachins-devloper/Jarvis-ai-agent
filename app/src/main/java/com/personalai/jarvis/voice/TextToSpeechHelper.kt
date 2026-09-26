@@ -16,6 +16,14 @@ class TextToSpeechHelper(context: Context) {
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
 
+    private val prefs = context.getSharedPreferences("jarvis_audio_prefs", Context.MODE_PRIVATE)
+    var speechRate: Float = prefs.getFloat("tts_speech_rate", 1.05f)
+        private set
+    var pitch: Float = prefs.getFloat("tts_pitch", 0.95f)
+        private set
+    var autoSpeak: Boolean = prefs.getBoolean("tts_auto_speak", true)
+        private set
+
     companion object {
         private const val TAG = "TTSHelper"
     }
@@ -29,8 +37,8 @@ class TextToSpeechHelper(context: Context) {
                         Log.w(TAG, "TTS: Language not supported or missing data")
                     } else {
                         isInitialized = true
-                        engine.setPitch(0.95f) // Slightly deeper futuristic tone
-                        engine.setSpeechRate(1.05f)
+                        engine.setPitch(pitch)
+                        engine.setSpeechRate(speechRate)
                         Log.i(TAG, "TTS initialized successfully.")
                     }
                 }
@@ -54,7 +62,11 @@ class TextToSpeechHelper(context: Context) {
         })
     }
 
-    fun speak(text: String, flush: Boolean = true) {
+    fun speak(text: String, flush: Boolean = true, force: Boolean = false) {
+        if (!force && !autoSpeak) {
+            Log.d(TAG, "Skipping speech: Auto-speak is disabled.")
+            return
+        }
         if (!isInitialized || tts == null) {
             Log.w(TAG, "Cannot speak: TTS not initialized.")
             return
@@ -68,6 +80,27 @@ class TextToSpeechHelper(context: Context) {
     fun stop() {
         tts?.stop()
         _isSpeaking.value = false
+    }
+
+    fun setSpeechRate(rate: Float) {
+        speechRate = rate
+        tts?.setSpeechRate(rate)
+        prefs.edit().putFloat("tts_speech_rate", rate).apply()
+    }
+
+    fun setPitch(newPitch: Float) {
+        pitch = newPitch
+        tts?.setPitch(newPitch)
+        prefs.edit().putFloat("tts_pitch", newPitch).apply()
+    }
+
+    fun setAutoSpeak(enabled: Boolean) {
+        autoSpeak = enabled
+        prefs.edit().putBoolean("tts_auto_speak", enabled).apply()
+    }
+
+    fun testVoice(sampleText: String = "Jarvis audio systems online, sir.") {
+        speak(sampleText, flush = true, force = true)
     }
 
     fun shutdown() {
