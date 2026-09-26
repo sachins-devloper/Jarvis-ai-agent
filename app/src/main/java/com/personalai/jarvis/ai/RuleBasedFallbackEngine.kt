@@ -42,7 +42,9 @@ class RuleBasedFallbackEngine : LocalLLMEngine {
         // Extract the user request from the structured prompt
         val userReqRegex = Regex("""User Request:\s*(.*)""", RegexOption.IGNORE_CASE)
         val match = userReqRegex.find(prompt)
-        val userText = (match?.groupValues?.get(1) ?: prompt).trim()
+        val rawText = (match?.groupValues?.get(1) ?: prompt).trim()
+        // Strip wake words like "Jarvis," or "Hey Jarvis," so commands like "Jarvis, call Mom" map directly
+        val userText = rawText.replace(Regex("""^(?:hey\s+)?jarvis[\s,:]+""", RegexOption.IGNORE_CASE), "").trim()
 
         // Check if this is an observation turn from a previous tool execution
         if (prompt.contains("Observation:")) {

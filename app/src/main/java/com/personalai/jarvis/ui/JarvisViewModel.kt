@@ -182,9 +182,8 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
             speechRecognizer.stopListening()
         } else {
             tts.stop()
-            speechRecognizer.startListening { text ->
-                submitQuery(text, speakResult = true)
-            }
+            // No lambda here — voiceState collector (VoiceState.Recognized) handles submission
+            speechRecognizer.startListening()
         }
     }
 

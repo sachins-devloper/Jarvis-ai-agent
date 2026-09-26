@@ -34,7 +34,7 @@ class SpeechRecognizerHelper(private val context: Context) {
 
     fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
 
-    fun startListening(onResult: (String) -> Unit) {
+    fun startListening(onResult: (String) -> Unit = {}) {
         if (!isAvailable()) {
             _voiceState.value = VoiceState.Error("Speech recognition is not available on this device.")
             return

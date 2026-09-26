@@ -23,15 +23,22 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        // Permissions handled
+        if (permissions[Manifest.permission.RECORD_AUDIO] == true) {
+            com.personalai.jarvis.services.JarvisVoiceService.startService(this)
+            viewModel.refreshServicesStatus()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // Request runtime permissions for voice recording and notifications
+        // Request runtime permissions for voice recording, contacts, and calls
         requestNecessaryPermissions()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            com.personalai.jarvis.services.JarvisVoiceService.startService(this)
+        }
 
         setContent {
             JarvisTheme {

@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.provider.ContactsContract
+import android.os.Build
+import android.telecom.TelecomManager
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.personalai.jarvis.agent.AgentTool
 import com.personalai.jarvis.agent.ToolDefinition
@@ -14,143 +16,106 @@ import com.personalai.jarvis.agent.ToolResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * CallTool — Places a phone call given a resolved phone number.
+ *
+ * Does NOT do contact lookup — use ContactTool first when only a name is known.
+ *
+ * Priority order:
+ *  1. TelecomManager.placeCall()  → direct call, no dialer opens
+ *  2. Intent.ACTION_CALL          → direct call, may open in-call UI
+ *  3. Intent.ACTION_DIAL          → opens dialer (fallback if CALL_PHONE denied)
+ *
+ * Tool call JSON:
+ *   { "tool": "make_call", "arguments": { "number": "+919876543210", "display_name": "Mom" } }
+ */
 class CallTool(private val context: Context) : AgentTool {
-    override val name: String = "make_call"
-    override val description: String = "Initiates a direct phone call to a contact name or phone number."
 
-    override val definition: ToolDefinition = ToolDefinition(
+    override val name        = "make_call"
+    override val description = "Places a direct phone call to a phone number. Use lookup_contact first if you only have a name."
+
+    override val definition = ToolDefinition(
         name = name,
         description = description,
         parameters = listOf(
             ToolParameter(
-                name = "contact",
+                name = "number",
                 type = "string",
-                description = "Name of the contact (e.g. 'Mom', 'John') or phone number to call.",
+                description = "Phone number to call (digits, +, - allowed).",
                 required = true
+            ),
+            ToolParameter(
+                name = "display_name",
+                type = "string",
+                description = "Display name for the contact (for confirmation message). Optional.",
+                required = false
             )
         )
     )
 
-    data class ContactMatch(val name: String, val number: String)
+    override suspend fun execute(arguments: Map<String, Any>): ToolResult = withContext(Dispatchers.Main) {
+        val number = (arguments["number"] as? String)?.trim()
+            ?: return@withContext ToolResult.error("Missing required parameter: number")
+        val displayName = (arguments["display_name"] as? String)?.trim() ?: number
 
-    private fun findMatchingContacts(contactQuery: String): List<ContactMatch> {
-        val cleanNumber = contactQuery.replace(" ", "")
-        if (cleanNumber.matches(Regex("""^[+0-9-]+$"""))) {
-            return listOf(ContactMatch(name = contactQuery, number = cleanNumber))
+        val cleanDigits = number.replace(Regex("[\\s\\-]"), "")
+        if (!cleanDigits.matches(Regex("""^[+0-9]+$"""))) {
+            return@withContext ToolResult.error("Invalid phone number: '$number'")
         }
 
-        val contentResolver = context.contentResolver
-        val list = mutableListOf<ContactMatch>()
-        val seen = mutableSetOf<String>()
+        val uri = Uri.parse("tel:$cleanDigits")
+        val hasCallPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CALL_PHONE
+        ) == PackageManager.PERMISSION_GRANTED
 
-        try {
-            val cursor = contentResolver.query(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                arrayOf(
-                    ContactsContract.CommonDataKinds.Phone.NUMBER,
-                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
-                ),
-                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
-                arrayOf("%$contactQuery%"),
-                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
-            )
-
-            cursor?.use {
-                val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                while (it.moveToNext()) {
-                    if (numIdx != -1 && nameIdx != -1) {
-                        val number = it.getString(numIdx)?.trim() ?: continue
-                        val name = it.getString(nameIdx)?.trim() ?: contactQuery
-                        val key = "${name.lowercase()}|${number.replace(" ", "")}"
-                        if (seen.add(key)) {
-                            list.add(ContactMatch(name, number))
-                        }
+        return@withContext try {
+            if (hasCallPermission) {
+                // Attempt 1: TelecomManager.placeCall (silent, no dialer, best)
+                val telecom = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+                var placed = false
+                if (telecom != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        telecom.placeCall(uri, null)
+                        placed = true
+                        Log.i(TAG, "Call placed via TelecomManager → $displayName ($cleanDigits)")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "TelecomManager.placeCall failed", e)
                     }
                 }
-            }
-        } catch (e: Exception) {
-            // Contacts provider error
-        }
-        return list
-    }
 
-    override suspend fun execute(arguments: Map<String, Any>): ToolResult = withContext(Dispatchers.Main) {
-        val contactQuery = (arguments["contact"] as? String)?.trim()
-            ?: return@withContext ToolResult.error("Missing required parameter: contact")
-
-        try {
-            val candidates = findMatchingContacts(contactQuery)
-
-            if (candidates.isEmpty()) {
-                val intent = Intent(Intent.ACTION_DIAL).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                return@withContext ToolResult.error("Could not find contact '$contactQuery' in phone contacts.")
-            }
-
-            // Check if there is an exact single match (e.g. user clicked exact suggestion or typed exact full name)
-            val exactMatches = candidates.filter { it.name.equals(contactQuery, ignoreCase = true) }
-            val targetContact = when {
-                exactMatches.size == 1 -> exactMatches.first()
-                candidates.size == 1 -> candidates.first()
-                else -> null
-            }
-
-            if (targetContact == null) {
-                // Ambiguous: multiple matching contacts found (e.g. "Arun Frnd", "Arun Cre8ive")
-                val formatted = candidates.take(5).mapIndexed { i, c -> "${i + 1}. ${c.name} (${c.number})" }.joinToString("\n")
-                val promptMsg = "Found ${candidates.size} contacts for '$contactQuery':\n$formatted\n\nWhich one would you like to call?"
-                val suggestions = candidates.take(4).map { "Call ${it.name}" }
-
-                return@withContext ToolResult.success(
-                    output = promptMsg,
-                    data = mapOf(
-                        "requires_disambiguation" to true,
-                        "task_type" to "call",
-                        "query" to contactQuery,
-                        "suggestions" to suggestions,
-                        "candidates" to candidates.map { it.name }
+                // Attempt 2: ACTION_CALL
+                if (!placed) {
+                    context.startActivity(
+                        Intent(Intent.ACTION_CALL, uri).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
                     )
-                )
-            }
-
-            val resolvedNumber = targetContact.number
-            val displayName = targetContact.name
-
-            val hasCallPermission = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.CALL_PHONE
-            ) == PackageManager.PERMISSION_GRANTED
-
-            if (hasCallPermission) {
-                // Directly place the phone call
-                val uri = Uri.parse("tel:${resolvedNumber.replace(" ", "")}")
-                val intent = Intent(Intent.ACTION_CALL, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    Log.i(TAG, "Call placed via ACTION_CALL → $displayName ($cleanDigits)")
                 }
-                context.startActivity(intent)
 
                 ToolResult.success(
-                    output = "Calling $displayName ($resolvedNumber)...",
-                    data = mapOf("contact" to displayName, "number" to resolvedNumber, "direct" to true)
+                    output = "📞 Calling $displayName ($number)…",
+                    data   = mapOf("number" to cleanDigits, "display_name" to displayName, "direct" to true)
                 )
             } else {
-                // Open dialer with number ready
-                val uri = Uri.parse("tel:${resolvedNumber.replace(" ", "")}")
-                val intent = Intent(Intent.ACTION_DIAL, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-
+                // Fallback: open dialer
+                context.startActivity(
+                    Intent(Intent.ACTION_DIAL, uri).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                )
                 ToolResult.success(
-                    output = "Dialer opened for $displayName ($resolvedNumber). Grant Phone Call permission in Android settings for direct calling.",
-                    data = mapOf("contact" to displayName, "number" to resolvedNumber, "direct" to false)
+                    output = "Dialer opened for $displayName. Grant 'Phone' permission for hands-free calling.",
+                    data   = mapOf("number" to cleanDigits, "display_name" to displayName, "direct" to false)
                 )
             }
         } catch (e: Exception) {
-            ToolResult.error("Failed to place call: ${e.localizedMessage ?: e.message}")
+            Log.e(TAG, "Call failed", e)
+            ToolResult.error("Failed to call $displayName: ${e.localizedMessage ?: e.message}")
         }
+    }
+
+    companion object {
+        private const val TAG = "CallTool"
     }
 }

@@ -265,11 +265,15 @@ fun JarvisScreen(
                 toolCount = uiState.toolCount,
                 isAccessibilityActive = uiState.isAccessibilityActive,
                 isNotificationListenerActive = uiState.isNotificationListenerActive,
+                isVoiceWakeActive = uiState.isVoiceWakeActive,
                 onOpenAccessibility = {
                     context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 },
                 onOpenNotifications = {
                     context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                },
+                onToggleVoiceWake = {
+                    viewModel.toggleVoiceWake()
                 },
                 onEngineClick = {
                     viewModel.openApiKeyDialog()
