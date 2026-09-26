@@ -36,10 +36,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VolumeUp
+import com.personalai.jarvis.ui.components.OpenAiKeyDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -126,10 +130,12 @@ fun JarvisScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Auto-scroll to bottom on new messages
+    // Auto-scroll to bottom on new messages or active loading state
     LaunchedEffect(uiState.messages.size, uiState.activeEvent) {
-        if (uiState.messages.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.messages.size - 1)
+        val hasActiveEvent = uiState.activeEvent !is AgentEvent.Idle && uiState.activeEvent !is AgentEvent.Completed
+        val totalCount = uiState.messages.size + if (hasActiveEvent) 1 else 0
+        if (totalCount > 0) {
+            listState.animateScrollToItem(totalCount - 1)
         }
     }
 
@@ -182,22 +188,42 @@ fun JarvisScreen(
                                 letterSpacing = 2.sp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Box(
+                            // Interactive Engine Mode Toggle Pill
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(JarvisCyan.copy(alpha = 0.2f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (uiState.isOpenAiEnabled) Color(0xFF10A37F).copy(alpha = 0.2f)
+                                        else JarvisCyan.copy(alpha = 0.2f)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (uiState.isOpenAiEnabled) Color(0xFF10A37F).copy(alpha = 0.6f)
+                                        else JarvisCyan.copy(alpha = 0.4f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { viewModel.toggleOpenAi(!uiState.isOpenAiEnabled) }
+                                    .padding(horizontal = 7.dp, vertical = 3.dp)
                             ) {
+                                Icon(
+                                    imageVector = if (uiState.isOpenAiEnabled) Icons.Default.CloudQueue else Icons.Default.Bolt,
+                                    contentDescription = "Toggle AI Engine",
+                                    tint = if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else JarvisCyan,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "LOCAL AI",
-                                    color = JarvisCyan,
+                                    text = if (uiState.isOpenAiEnabled) uiState.openAiModel else "LOCAL AI",
+                                    color = if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else JarvisCyan,
                                     fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
                                 )
                             }
                         }
                         Text(
-                            text = "autonomous Android Agent",
+                            text = if (uiState.isOpenAiEnabled) "OpenAI cloud reasoning active" else "autonomous Android Agent",
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
@@ -205,6 +231,15 @@ fun JarvisScreen(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // OpenAI Config Key Icon
+                    IconButton(onClick = { viewModel.openApiKeyDialog() }) {
+                        Icon(
+                            imageVector = Icons.Default.Key,
+                            contentDescription = "OpenAI Config",
+                            tint = if (uiState.isOpenAiEnabled) Color(0xFF10A37F) else TextMuted,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
                     if (uiState.isSpeaking) {
                         IconButton(onClick = { viewModel.stopSpeaking() }) {
                             Icon(
@@ -235,50 +270,13 @@ fun JarvisScreen(
                 },
                 onOpenNotifications = {
                     context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                },
+                onEngineClick = {
+                    viewModel.openApiKeyDialog()
                 }
             )
 
-            // 3. Active Agent State Banner (Thinking / Tool Execution)
-            AnimatedVisibility(
-                visible = uiState.activeEvent !is AgentEvent.Idle && uiState.activeEvent !is AgentEvent.Completed,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(JarvisSurfaceVariant)
-                        .border(1.dp, JarvisCyan.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                        .padding(10.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = JarvisCyan,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        val statusText = when (val ev = uiState.activeEvent) {
-                            is AgentEvent.Thinking -> ev.message
-                            is AgentEvent.ToolExecuting -> "Agent executing: ${ev.toolName}..."
-                            is AgentEvent.ToolExecuted -> "Tool finished: ${ev.toolName}"
-                            is AgentEvent.TokenStream -> "Generating response..."
-                            is AgentEvent.Error -> "Error: ${ev.error}"
-                            else -> "Processing..."
-                        }
-                        Text(
-                            text = statusText,
-                            color = JarvisCyan,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            // 4. Conversation Stream & Tool Execution Cards with Scroll-to-Bottom Button
+            // 3. Conversation Stream & Tool Execution Cards with Scroll-to-Bottom Button
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -377,15 +375,52 @@ fun JarvisScreen(
                         }
                     }
 
-                    // If currently executing a tool right now, show live ToolExecutionCard
-                    if (uiState.activeEvent is AgentEvent.ToolExecuting) {
-                        val ev = uiState.activeEvent as AgentEvent.ToolExecuting
-                        item {
-                            ToolExecutionCard(
-                                toolName = ev.toolName,
-                                arguments = ev.arguments,
-                                isExecuting = true
-                            )
+                    // Active Agent Loading / Thinking / Tool Execution Box below the last message
+                    if (uiState.activeEvent !is AgentEvent.Idle && uiState.activeEvent !is AgentEvent.Completed) {
+                        if (uiState.activeEvent is AgentEvent.ToolExecuting) {
+                            val ev = uiState.activeEvent as AgentEvent.ToolExecuting
+                            item {
+                                ToolExecutionCard(
+                                    toolName = ev.toolName,
+                                    arguments = ev.arguments,
+                                    isExecuting = true
+                                )
+                            }
+                        } else {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(JarvisSurfaceVariant)
+                                        .border(1.dp, JarvisCyan.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = JarvisCyan,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        val statusText = when (val ev = uiState.activeEvent) {
+                                            is AgentEvent.Thinking -> ev.message
+                                            is AgentEvent.ToolExecuted -> "Tool completed: ${ev.toolName}"
+                                            is AgentEvent.TokenStream -> "Generating response..."
+                                            is AgentEvent.Error -> "Error: ${ev.error}"
+                                            else -> "Processing..."
+                                        }
+                                        Text(
+                                            text = statusText,
+                                            color = JarvisCyan,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -535,6 +570,19 @@ fun JarvisScreen(
                     }
                 )
             }
+        }
+
+        // 6. OpenAI Configuration & API Key Dialog
+        if (uiState.showApiKeyDialog) {
+            OpenAiKeyDialog(
+                initialApiKey = uiState.openAiKey,
+                initialModel = uiState.openAiModel,
+                initialEnabled = uiState.isOpenAiEnabled,
+                onDismiss = { viewModel.dismissApiKeyDialog() },
+                onSave = { apiKey, model, enabled ->
+                    viewModel.saveOpenAiConfig(apiKey, model, enabled)
+                }
+            )
         }
     }
 }

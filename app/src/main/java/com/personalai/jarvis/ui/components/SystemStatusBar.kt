@@ -40,8 +40,12 @@ fun SystemStatusBar(
     isNotificationListenerActive: Boolean,
     onOpenAccessibility: () -> Unit,
     onOpenNotifications: () -> Unit,
+    onEngineClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val isOpenAi = engineName.contains("OpenAI", ignoreCase = true)
+    val isGguf = engineName.contains("GGUF", ignoreCase = true)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -53,8 +57,9 @@ fun SystemStatusBar(
         // AI Engine Status
         StatusPill(
             label = "AI Engine",
-            value = if (engineName.contains("GGUF")) "GGUF llama.cpp" else "Zero-Shot Mobile",
-            indicatorColor = JarvisCyan
+            value = if (isOpenAi) engineName else if (isGguf) "GGUF llama.cpp" else "Zero-Shot Mobile",
+            indicatorColor = if (isOpenAi) Color(0xFF10A37F) else JarvisCyan,
+            onClick = onEngineClick
         )
 
         // Tools count
@@ -100,7 +105,7 @@ private fun StatusPill(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(6.dp)
+                    .size(7.dp)
                     .clip(CircleShape)
                     .background(indicatorColor)
             )
@@ -109,7 +114,7 @@ private fun StatusPill(
                 text = "$label: ",
                 color = TextSecondary,
                 fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Normal
             )
             Text(
                 text = value,

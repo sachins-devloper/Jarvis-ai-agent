@@ -25,6 +25,10 @@ data class UiState(
     val isAccessibilityActive: Boolean = false,
     val isNotificationListenerActive: Boolean = false,
     val engineName: String = "RuleBasedFallbackEngine",
+    val isOpenAiEnabled: Boolean = false,
+    val openAiKey: String = "",
+    val openAiModel: String = "gpt-4o-mini",
+    val showApiKeyDialog: Boolean = false,
     val toolCount: Int = 0,
     val downloadProgress: Map<String, Int> = emptyMap(),
     val dynamicSuggestions: List<String> = emptyList(),
@@ -40,16 +44,24 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
     private val speechRecognizer = app.speechRecognizer
     private val tts = app.textToSpeech
 
-    private val _uiState = MutableStateFlow(UiState())
+    private val _uiState = MutableStateFlow(
+        UiState(
+            isOpenAiEnabled = localLLM.isOpenAiEnabled(),
+            openAiKey = localLLM.getOpenAiKey(),
+            openAiModel = localLLM.getOpenAiModel()
+        )
+    )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
         // Load initial messages and check for local GGUF models
         viewModelScope.launch {
-            val localModels = localLLM.modelManager.getLocalModels()
-            if (localModels.isNotEmpty() && !localLLM.isUsingGGUF()) {
-                val modelFile = localModels.first()
-                localLLM.loadGGUFModel(modelFile)
+            if (!localLLM.isOpenAiEnabled()) {
+                val localModels = localLLM.modelManager.getLocalModels()
+                if (localModels.isNotEmpty() && !localLLM.isUsingGGUF()) {
+                    val modelFile = localModels.first()
+                    localLLM.loadGGUFModel(modelFile)
+                }
             }
             val initialMsgs = memoryRepo.getRecentMessages(30)
             _uiState.value = _uiState.value.copy(
@@ -107,10 +119,42 @@ class JarvisViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun toggleOpenAi(enabled: Boolean) {
+        if (enabled && localLLM.getOpenAiKey().isBlank()) {
+            _uiState.value = _uiState.value.copy(showApiKeyDialog = true)
+        } else {
+            localLLM.setOpenAiConfig(localLLM.getOpenAiKey(), localLLM.getOpenAiModel(), enabled)
+            _uiState.value = _uiState.value.copy(
+                isOpenAiEnabled = enabled,
+                engineName = localLLM.getActiveEngineName()
+            )
+        }
+    }
+
+    fun openApiKeyDialog() {
+        _uiState.value = _uiState.value.copy(showApiKeyDialog = true)
+    }
+
+    fun dismissApiKeyDialog() {
+        _uiState.value = _uiState.value.copy(showApiKeyDialog = false)
+    }
+
+    fun saveOpenAiConfig(apiKey: String, model: String, enabled: Boolean) {
+        localLLM.setOpenAiConfig(apiKey, model, enabled)
+        _uiState.value = _uiState.value.copy(
+            isOpenAiEnabled = enabled && apiKey.isNotBlank(),
+            openAiKey = apiKey,
+            openAiModel = model,
+            showApiKeyDialog = false,
+            engineName = localLLM.getActiveEngineName()
+        )
+    }
+
     fun refreshServicesStatus() {
         _uiState.value = _uiState.value.copy(
             isAccessibilityActive = JarvisAccessibilityService.isRunning(),
-            isNotificationListenerActive = JarvisNotificationListenerService.isRunning()
+            isNotificationListenerActive = JarvisNotificationListenerService.isRunning(),
+            engineName = localLLM.getActiveEngineName()
         )
     }
 
